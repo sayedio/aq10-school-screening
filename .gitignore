@@ -17,7 +17,7 @@ __pycache__/
 data/
 PRIVATE/
 work/
-aq_10_v2/
+aq_10/
 
 # Public exception: the locked split, by coded child ID only
 !config/split_assignment.csv

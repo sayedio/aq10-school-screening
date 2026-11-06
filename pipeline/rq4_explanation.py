@@ -46,7 +46,7 @@ print("=" * 78)
 # drive.mount("/content/drive", force_remount=True)
 
 BASE    = os.environ.get("AQ10_BASE", "/content/drive/MyDrive/Autism")
-PROJECT = os.path.join(BASE, "aq_10_v2")          # FIXED: must match RQ3
+PROJECT = os.path.join(BASE, "aq_10")          # FIXED: must match RQ3
 PROC    = os.path.join(PROJECT, "data", "processed")
 
 RQ3_FLAG     = os.path.join(PROJECT, "rq3_augmentation", "logs", "rq3_done.flag")

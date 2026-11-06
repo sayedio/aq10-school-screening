@@ -1,7 +1,7 @@
 """Write results/paper_numbers.md: the numbers a reviewer needs to check the paper.
 
 Run after rq1_baseline.py to rq4_explanation.py, with AQ10_BASE pointing at the
-folder that holds the private aq_10_v2 project folder:
+folder that holds the private aq_10 project folder:
 
     python analysis/paper_numbers.py > my_paper_numbers.md
 
@@ -27,7 +27,7 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVC
 
-ROOT = os.path.join(os.environ.get("AQ10_BASE", os.path.join(os.getcwd(), "work")), "aq_10_v2")
+ROOT = os.path.join(os.environ.get("AQ10_BASE", os.path.join(os.getcwd(), "work")), "aq_10")
 AQ = [f"A_Q{i}" for i in range(1, 11)]
 SEED = 42
 ITEM = {"A_Q1": "Q1 Notices small sounds", "A_Q2": "Q2 Whole picture over details (R)",

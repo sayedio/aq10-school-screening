@@ -77,7 +77,7 @@ print("\n[Step 0B]  Mounting drive & initializing directory tree ...")
 
 BASE_DIR    = os.environ.get("AQ10_BASE", "/content/drive/MyDrive/Autism")
 DATA_DIR    = os.path.join(BASE_DIR,    "Data")
-PROJECT_DIR = os.path.join(BASE_DIR,    "aq_10_v2")
+PROJECT_DIR = os.path.join(BASE_DIR,    "aq_10")
 
 # Verify raw data files exist before allocating anything
 for fname in ["ASD.xlsx", "Normal.xlsx"]:

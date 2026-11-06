@@ -39,7 +39,7 @@ print("=" * 78)
 # drive.mount("/content/drive", force_remount=True)
 
 BASE    = os.environ.get("AQ10_BASE", "/content/drive/MyDrive/Autism")
-PROJECT = os.path.join(BASE, "aq_10_v2")
+PROJECT = os.path.join(BASE, "aq_10")
 
 RQ1_MODELS_DIR = os.path.join(PROJECT, "rq1_baseline", "models")
 RQ1_FLAG       = os.path.join(PROJECT, "logs", "rq1_done.flag")

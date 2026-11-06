@@ -5,12 +5,12 @@ names and are not shared. Approved users of the BD-AQ10 dataset
 (doi: 10.5281/zenodo.23988060) receive full_dataset.csv instead. This script turns
 that file into the exact inputs that rq1_baseline.py to rq4_explanation.py read:
 
-    <AQ10_BASE>/aq_10_v2/data/processed/bd_clean.csv
-    <AQ10_BASE>/aq_10_v2/data/splits/train.csv      (development set, 674 children)
-    <AQ10_BASE>/aq_10_v2/data/splits/test.csv       (hold-out set, 169 children)
-    <AQ10_BASE>/aq_10_v2/config/master_config.json
-    <AQ10_BASE>/aq_10_v2/config/cv_fold_indices.json
-    <AQ10_BASE>/aq_10_v2/logs/phase0_done.flag
+    <AQ10_BASE>/aq_10/data/processed/bd_clean.csv
+    <AQ10_BASE>/aq_10/data/splits/train.csv      (development set, 674 children)
+    <AQ10_BASE>/aq_10/data/splits/test.csv       (hold-out set, 169 children)
+    <AQ10_BASE>/aq_10/config/master_config.json
+    <AQ10_BASE>/aq_10/config/cv_fold_indices.json
+    <AQ10_BASE>/aq_10/logs/phase0_done.flag
 
 Row order, the development/test split and the five cross-validation folds come
 from config/split_assignment.csv, so the downstream scripts see the same rows in
@@ -82,7 +82,7 @@ def build(full_dataset_csv, base):
     dev = d.loc[sa[sa.partition == "development"].sort_values("split_row").child_id].reset_index()
     test = d.loc[sa[sa.partition == "test"].sort_values("split_row").child_id].reset_index()
 
-    proj = os.path.join(base, "aq_10_v2")
+    proj = os.path.join(base, "aq_10")
     for sub in ("data/processed", "data/splits", "config", "logs"):
         os.makedirs(os.path.join(proj, sub), exist_ok=True)
     bd.to_csv(os.path.join(proj, "data/processed/bd_clean.csv"), index=False)
