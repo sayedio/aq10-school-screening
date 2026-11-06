@@ -1,0 +1,23 @@
+# Never commit data, school names or trained models
+*.csv
+*.xlsx
+*.xls
+*.pdf
+*.zip
+*.joblib
+*.pkl
+*.pickle
+*.png
+*.jpg
+*.jpeg
+*.docx
+*.ipynb_checkpoints
+__pycache__/
+.venv/
+data/
+PRIVATE/
+work/
+aq_10_v2/
+
+# Public exception: the locked split, by coded child ID only
+!config/split_assignment.csv

@@ -1,0 +1,153 @@
+{
+    "VERSION": "FINAL-5.0",
+    "SEED": 42,
+    "N_OUTER_FOLDS": 5,
+    "TEST_RATIO": 0.2,
+    "THRESHOLD_FIXED": 0.5,
+    "final_clean_count": 843,
+    "n_train": 674,
+    "n_test": 169,
+    "train_class_counts": {
+        "ASD": 322,
+        "Normal": 352
+    },
+    "test_class_counts": {
+        "ASD": 81,
+        "Normal": 88
+    },
+    "n_schools": 12,
+    "n_schools_in_test": 0,
+    "fallback_global_split": true,
+    "split_strategy": "School-stratified 80/20 (FINAL-5.0): per-school stratified split, pooled. Schools contributing to test: 0/12. Fallback global split used: True.",
+    "leakage_guard": {
+        "type": "participant_id_uniqueness_only",
+        "id_overlap": 0,
+        "status": "PASS",
+        "note": "Identical A_Q1..A_Q10 patterns across DIFFERENT children are natural clinical overlap in a 10-item screener \u2014 NOT leakage. Only participant ID uniqueness is enforced."
+    },
+    "forward_items": [
+        "Q1",
+        "Q5",
+        "Q7",
+        "Q10",
+        "SQ1",
+        "SQ2",
+        "SQ3"
+    ],
+    "reverse_items": [
+        "Q2",
+        "Q3",
+        "Q4",
+        "Q6",
+        "Q8",
+        "Q9",
+        "SQ4"
+    ],
+    "forward_map": {
+        "1": 3,
+        "2": 2,
+        "3": 1,
+        "4": 0
+    },
+    "reverse_map": {
+        "1": 0,
+        "2": 1,
+        "3": 2,
+        "4": 3
+    },
+    "aq_aligned_cols": [
+        "A_Q1",
+        "A_Q2",
+        "A_Q3",
+        "A_Q4",
+        "A_Q5",
+        "A_Q6",
+        "A_Q7",
+        "A_Q8",
+        "A_Q9",
+        "A_Q10"
+    ],
+    "sq_aligned_cols": [
+        "A_SQ1",
+        "A_SQ2",
+        "A_SQ3",
+        "A_SQ4"
+    ],
+    "q_cols_raw": [
+        "Q1",
+        "Q2",
+        "Q3",
+        "Q4",
+        "Q5",
+        "Q6",
+        "Q7",
+        "Q8",
+        "Q9",
+        "Q10"
+    ],
+    "sq_cols_raw": [
+        "SQ1",
+        "SQ2",
+        "SQ3",
+        "SQ4"
+    ],
+    "all_q_cols_raw": [
+        "Q1",
+        "Q2",
+        "Q3",
+        "Q4",
+        "Q5",
+        "Q6",
+        "Q7",
+        "Q8",
+        "Q9",
+        "Q10",
+        "SQ1",
+        "SQ2",
+        "SQ3",
+        "SQ4"
+    ],
+    "paths": {
+        "project_dir": "/content/drive/MyDrive/Autism/aq_10_v2",
+        "bd_clean": "/content/drive/MyDrive/Autism/aq_10_v2/data/processed/bd_clean.csv",
+        "train": "/content/drive/MyDrive/Autism/aq_10_v2/data/splits/train.csv",
+        "test": "/content/drive/MyDrive/Autism/aq_10_v2/data/splits/test.csv",
+        "cv_fold_indices": "/content/drive/MyDrive/Autism/aq_10_v2/config/cv_fold_indices.json",
+        "hashes": "/content/drive/MyDrive/Autism/aq_10_v2/data/hashes.json"
+    },
+    "consort": {
+        "raw_total": 863,
+        "excl_no_consent": 0,
+        "excl_no_school": 0,
+        "excl_missing_q": 0,
+        "excl_missing_sq": 0,
+        "excl_bad_likert": 0,
+        "excl_bad_age": 20,
+        "final_cohort": 843,
+        "final_asd": 403,
+        "final_normal": 440
+    },
+    "algorithms": [
+        "LR",
+        "SVM",
+        "RF",
+        "KNN",
+        "NB"
+    ],
+    "architecture_notes": {
+        "split_strategy": "School-stratified 80/20 (FINAL-5.0). Each school independently split; schools unable to contribute send all to dev. Fallback to global stratified 80/20 if no school can contribute.",
+        "leakage_prevention": "Participant ID uniqueness enforced. Identical AQ-10 patterns across different children are NOT leakage.",
+        "cv_strategy": "5-fold StratifiedKFold on train set, sealed once in Phase 0. Identical fold assignments for all 5 algorithms.",
+        "threshold_protocol": "Decision threshold fixed at 0.50, pre-specified in Phase 0. No Youden's J or post-hoc threshold selection.",
+        "final_model_protocol": "M* (champion) retrained on FULL train set with best HPs from CV. Evaluated exactly once on locked test set.",
+        "bootstrap_protocol": "Stratified bootstrap preserving original class counts, 2000 iterations, 95% percentile CI. No BCa correction.",
+        "no_modeling_in_phase0": "No scaling, SMOTE, feature selection, or threshold tuning. All transforms applied only inside CV fold training sets.",
+        "rq2_note": "For LOSO (RQ2): lock the algorithm + hyperparameters + threshold from RQ1. Retrain a FRESH model inside each LOSO fold \u2014 do NOT reuse the joblib model trained on all dev data."
+    },
+    "md5_hashes": {
+        "bd_clean.csv": "4bb240b65ad4c407e185844a0ac4abfb",
+        "train.csv": "7556a68ba920f760a4b6daa5888a7667",
+        "test.csv": "3856d0ea5a0b5da5012c9930bebf8c46",
+        "cv_fold_indices.json": "032d2e381ddd0b8ff9fe7578aa7a4055"
+    }
+}
