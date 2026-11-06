@@ -1,6 +1,6 @@
 # aq10-school-screening-code
 
-Analysis code for the paper *Machine Learning on AQ-10 Child Responses for School-Based Autism Screening: Validation in Unseen Schools Against a Score-Independent Label*.
+Analysis code for the paper _Machine Learning on AQ-10 Child Responses for School-Based Autism Screening: Validation in Unseen Schools Against a Score-Independent Label_.
 
 The study compares a support vector machine trained on the ten graded AQ-10 Child answers with the published cut-off (score ≥ 6) in 843 children aged 4 to 11 years from five special and seven mainstream schools in Bangladesh. The reference label is school placement. The model is tested once on a held-out set and then with leave-one-school-out validation.
 
@@ -14,18 +14,18 @@ The questionnaire data are on Zenodo: **BD-AQ10**, version 1.0.0, [doi:10.5281/z
 
 ## Contents
 
-| File | Purpose |
-|---|---|
-| `pipeline/prepare_from_zenodo.py` | Rebuilds the analysis files from the Zenodo file, in the locked row order and split |
-| `pipeline/phase0_qc.py` | Original Phase 0 (cleaning, exclusions, aligned 0–3 encoding, 80/20 split, five folds). Needs the original school spreadsheets, which are not shared; use `pipeline/prepare_from_zenodo.py` instead |
-| `pipeline/rq1_baseline.py` | Five learners, 86 configurations, locked SVM, one hold-out test against the AQ-10 rule |
-| `pipeline/rq2_loso.py` | Leave-one-school-out validation of the locked SVM |
-| `pipeline/rq3_augmentation.py` | Ten items versus fourteen items under the same scheme |
-| `pipeline/rq4_explanation.py` | Kernel SHAP, permutation importance and rank stability |
-| `analysis/paper_numbers.py` | Writes `results/paper_numbers.md` from the locked-run outputs, including the post hoc analyses |
-| `analysis/make_figure1.py` | Draws Fig. 1 (study design) |
-| `config/` | Locked split by coded child ID (`split_assignment.csv`), fold indices and Phase-0 settings |
-| [`results/paper_numbers.md`](results/paper_numbers.md) | The numbers behind each table, figure and key claim in the paper, from the locked run |
+| File                                                   | Purpose                                                                                                                                                                                             |
+| ------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pipeline/prepare_from_zenodo.py`                      | Rebuilds the analysis files from the Zenodo file, in the locked row order and split                                                                                                                 |
+| `pipeline/phase0_qc.py`                                | Original Phase 0 (cleaning, exclusions, aligned 0–3 encoding, 80/20 split, five folds). Needs the original school spreadsheets, which are not shared; use `pipeline/prepare_from_zenodo.py` instead |
+| `pipeline/rq1_baseline.py`                             | Five learners, 86 configurations, locked SVM, one hold-out test against the AQ-10 rule                                                                                                              |
+| `pipeline/rq2_loso.py`                                 | Leave-one-school-out validation of the locked SVM                                                                                                                                                   |
+| `pipeline/rq3_augmentation.py`                         | Ten items versus fourteen items under the same scheme                                                                                                                                               |
+| `pipeline/rq4_explanation.py`                          | Kernel SHAP, permutation importance and rank stability                                                                                                                                              |
+| `analysis/paper_numbers.py`                            | Writes `results/paper_numbers.md` from the locked-run outputs, including the post hoc analyses                                                                                                      |
+| `analysis/make_figure1.py`                             | Draws Fig. 1 (study design)                                                                                                                                                                         |
+| `config/`                                              | Locked split by coded child ID (`split_assignment.csv`), fold indices and Phase-0 settings                                                                                                          |
+| [`results/paper_numbers.md`](results/paper_numbers.md) | The numbers behind each table, figure and key claim in the paper, from the locked run                                                                                                               |
 
 ## Reproducing the paper
 
@@ -48,13 +48,6 @@ Each step writes into `$AQ10_BASE/aq_10_v2/` and checks that the previous step f
 
 The locked run used Google Colab with the versions in `requirements.txt`. The post hoc refits in `analysis/paper_numbers.py` were run with scikit-learn 1.7.2 and reproduced 842 of the 843 locked leave-one-school-out decisions, so a different library version can move a result in the last decimal place.
 
-## Notes
-
-- The code calls the two groups `ASD` and `Normal`; the paper calls them special-school and mainstream children. School codes `SCH_001` to `SCH_012` in the code are `S01` to `S12` in the paper and on Zenodo.
-- The item descriptions in `pipeline/rq4_explanation.py` were corrected after the locked run to match the published AQ-10 Child wording. Only labels changed; no numbers are affected.
-- `pipeline/rq4_explanation.py` also writes a subgroup table that treats gender codes as case-sensitive. The subgroup results in the paper come from `analysis/paper_numbers.py`, which merges them.
-- One child (a362) had gender left blank at data entry; the paper form shows female, and the Zenodo file records F. `analysis/paper_numbers.py` applies this.
-
 ## Licence
 
 Code: MIT (see `LICENSE`). The English AQ-10 Child items are copyrighted by Allison, Auyeung and Baron-Cohen (2012).
@@ -62,4 +55,4 @@ Code: MIT (see `LICENSE`). The English AQ-10 Child items are copyrighted by Alli
 ## How to cite
 
 Paper: to be added after acceptance.
-Dataset: Sheikh, M. S., Munna, M. M. M., Habib, M. H. R., & Ahamed, M. S. (2026). *BD-AQ10: School-based AQ-10 Child data from special and mainstream schools in Bangladesh* (Version 1.0.0) [Dataset]. Zenodo. https://doi.org/10.5281/zenodo.23988060
+Dataset: Sheikh, M. S., Munna, M. M. M., Habib, M. H. R., & Ahamed, M. S. (2026). _BD-AQ10: School-based AQ-10 Child data from special and mainstream schools in Bangladesh_ (Version 1.0.0) [Dataset]. Zenodo. https://doi.org/10.5281/zenodo.23988060
