@@ -22,6 +22,8 @@ The questionnaire data are on Zenodo: **BD-AQ10**, version 1.0.0, [doi:10.5281/z
 | `pipeline/rq2_loso.py`                                 | Leave-one-school-out validation of the locked SVM                                                                                                                                                   |
 | `pipeline/rq3_augmentation.py`                         | Ten items versus fourteen items under the same scheme                                                                                                                                               |
 | `pipeline/rq4_explanation.py`                          | Kernel SHAP, permutation importance and rank stability                                                                                                                                              |
+| `pipeline/step5_school_effects.py`                     | Run after RQ4. Whether the model learns school-specific answer patterns: school fingerprints in the answers, seen versus unseen schools, and why school S06 had false positives                     |
+| `pipeline/step6_robustness.py`                         | Run after RQ4. Paired tests and intervals with the school as the unit, SVM settings re-tuned inside every fold, and AQ-10 cut-offs 4 to 8                                                           |
 | `analysis/paper_numbers.py`                            | Writes `results/paper_numbers.md` from the locked-run outputs, including the post hoc analyses                                                                                                      |
 | `analysis/make_figure1.py`                             | Draws Fig. 1 (study design)                                                                                                                                                                         |
 | `config/`                                              | Locked split by coded child ID (`split_assignment.csv`), fold indices and Phase-0 settings                                                                                                          |
@@ -41,10 +43,12 @@ python pipeline/rq1_baseline.py
 python pipeline/rq2_loso.py
 python pipeline/rq3_augmentation.py
 python pipeline/rq4_explanation.py
+python pipeline/step5_school_effects.py
+python pipeline/step6_robustness.py
 python analysis/paper_numbers.py > my_paper_numbers.md
 ```
 
-If you leave out the path, `prepare_from_zenodo.py` asks for it; in a Colab notebook, `%run pipeline/prepare_from_zenodo.py` shows an upload button instead. Each step writes into `$AQ10_BASE/aq_10/` and checks that the previous step finished. Compare `my_paper_numbers.md` with [`results/paper_numbers.md`](results/paper_numbers.md). Never commit the working folder.
+If you leave out the path, `prepare_from_zenodo.py` asks for it; in a Colab notebook, `%run pipeline/prepare_from_zenodo.py` shows an upload button instead. Each step writes into `$AQ10_BASE/aq_10/` and checks that the previous step finished. Steps 5 and 6 were added after the locked run to examine the school effects seen in RQ2; they use the locked SVM settings and predictions and write `step5_school_effects/` and `step6_robustness/`, each with a `report_step5.md` or `report_step6.md`. Compare `my_paper_numbers.md` with [`results/paper_numbers.md`](results/paper_numbers.md). Never commit the working folder.
 
 The locked run used Google Colab with the versions in `requirements.txt`. The post hoc refits in `analysis/paper_numbers.py` were run with scikit-learn 1.7.2 and reproduced 842 of the 843 locked leave-one-school-out decisions, so a different library version can move a result in the last decimal place.
 
