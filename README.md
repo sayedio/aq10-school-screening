@@ -44,7 +44,7 @@ python pipeline/rq4_explanation.py
 python analysis/paper_numbers.py > my_paper_numbers.md
 ```
 
-Each step writes into `$AQ10_BASE/aq_10/` and checks that the previous step finished. Compare `my_paper_numbers.md` with [`results/paper_numbers.md`](results/paper_numbers.md). Never commit the working folder.
+If you leave out the path, `prepare_from_zenodo.py` asks for it; in a Colab notebook, `%run pipeline/prepare_from_zenodo.py` shows an upload button instead. Each step writes into `$AQ10_BASE/aq_10/` and checks that the previous step finished. Compare `my_paper_numbers.md` with [`results/paper_numbers.md`](results/paper_numbers.md). Never commit the working folder.
 
 The locked run used Google Colab with the versions in `requirements.txt`. The post hoc refits in `analysis/paper_numbers.py` were run with scikit-learn 1.7.2 and reproduced 842 of the 843 locked leave-one-school-out decisions, so a different library version can move a result in the last decimal place.
 

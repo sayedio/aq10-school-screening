@@ -16,9 +16,10 @@ Row order, the development/test split and the five cross-validation folds come
 from config/split_assignment.csv, so the downstream scripts see the same rows in
 the same order as in the locked run. School names are replaced by school codes.
 
-Usage:
+Usage (AQ10_BASE set to an empty working folder; default ./work):
     python pipeline/prepare_from_zenodo.py path/to/full_dataset.csv
-with AQ10_BASE set to an empty working folder (default: ./work).
+    python pipeline/prepare_from_zenodo.py        # asks for the path
+    %run pipeline/prepare_from_zenodo.py          # in a Colab notebook: shows an upload button
 """
 import json
 import os
@@ -102,7 +103,46 @@ def build(full_dataset_csv, base):
     print(f"  development {len(dev)}, test {len(test)}, AQ-10 rule positive {int(bd.AQ_rule_pred.sum())}")
 
 
-if __name__ == "__main__":
-    if len(sys.argv) != 2:
+def ask_for_dataset(base):
+    """Get full_dataset.csv from the user: an upload button in a Colab notebook, otherwise a typed path."""
+    try:
+        from IPython import get_ipython
+        in_colab = get_ipython() is not None and "google.colab" in sys.modules
+    except ImportError:
+        in_colab = False
+    if in_colab:
+        from google.colab import files
+        print("Choose full_dataset.csv from your computer.")
+        uploaded = files.upload()
+        if len(uploaded) != 1:
+            sys.exit("Upload exactly one file: full_dataset.csv")
+        name, content = next(iter(uploaded.items()))
+        if os.path.isfile(name):                     # files.upload() also saves a copy in the current folder
+            os.remove(name)
+        dest = os.path.join(base, "input", "full_dataset.csv")   # private working folder, never the repository
+        os.makedirs(os.path.dirname(dest), exist_ok=True)
+        with open(dest, "wb") as fh:
+            fh.write(content)
+        print(f"Saved the upload as {dest}")
+        return dest
+    try:
+        return input("Path to full_dataset.csv (or the folder that holds it): ")
+    except EOFError:
         sys.exit(__doc__)
-    build(sys.argv[1], os.environ.get("AQ10_BASE", os.path.join(os.getcwd(), "work")))
+
+
+def resolve(path):
+    path = os.path.expanduser(path.strip().strip('"').strip("'"))
+    if os.path.isdir(path):
+        path = os.path.join(path, "full_dataset.csv")
+    if not os.path.isfile(path):
+        sys.exit(f"File not found: {path}")
+    return path
+
+
+if __name__ == "__main__":
+    if len(sys.argv) > 2:
+        sys.exit(__doc__)
+    base = os.environ.get("AQ10_BASE", os.path.join(os.getcwd(), "work"))
+    source = sys.argv[1] if len(sys.argv) == 2 else ask_for_dataset(base)
+    build(resolve(source), base)
