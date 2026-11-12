@@ -51,13 +51,17 @@ def build(full_dataset_csv, base):
     if bad.any():
         sys.exit(f"{int(bad.sum())} rows have item codes outside 1-4")
 
-    special = z.group.str.strip().str.lower().eq("special")
+    group = z.group.astype(str).str.strip().str.lower()
+    unknown = sorted(set(group) - {"asd", "special", "mainstream"})
+    if unknown:
+        sys.exit(f"Unexpected values in the group column: {unknown} (expected ASD or mainstream)")
+    asd = group.isin(["asd", "special"])                  # ASD school; the file first uploaded said "special"
     d = pd.DataFrame({
         "ID": z.child_id,
-        "source_form": special.map({True: "ASD.xlsx", False: "Normal.xlsx"}),
+        "source_form": asd.map({True: "ASD.xlsx", False: "Normal.xlsx"}),
         "school_id": "SCH_" + z.school_code.str[1:].str.zfill(3),
         "school_name": z.school_code,                      # names withheld
-        "school_type": special.map({True: "asd", False: "normal"}),
+        "school_type": asd.map({True: "asd", False: "normal"}),
         "consent": "yes",
         "Age": z.age.astype(int),
         "Gender": z.gender,
@@ -66,7 +70,7 @@ def build(full_dataset_csv, base):
     })
     for c in AQ_ITEMS + SQ_ITEMS:
         d[c] = z[c].astype(int)
-    d["label"] = special.astype(int)
+    d["label"] = asd.astype(int)
     for c in FORWARD:                                      # aligned 0 (no trait) to 3 (strongest trait)
         d[f"A_{c}"] = 4 - d[c]
     for c in REVERSE:
@@ -99,7 +103,7 @@ def build(full_dataset_csv, base):
     val = sorted(sum((folds[f"fold_{k}"]["val_indices"] for k in range(1, 6)), []))
     assert val == list(range(len(dev))), "fold indices do not cover the development set"
     print(f"Wrote {proj}")
-    print(f"  children {len(bd)} (special {int(bd.label.sum())}, mainstream {int((1 - bd.label).sum())})")
+    print(f"  children {len(bd)} (ASD school {int(bd.label.sum())}, mainstream {int((1 - bd.label).sum())})")
     print(f"  development {len(dev)}, test {len(test)}, AQ-10 rule positive {int(bd.AQ_rule_pred.sum())}")
 
 

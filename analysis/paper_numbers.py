@@ -311,10 +311,13 @@ def main():
     add("")
 
     # ---- Post hoc refits
-    p10 = loso(d, y, AQ, svm_pipe)
-    p9 = loso(d, y, [f for f in AQ if f != "A_Q1"], svm_pipe)
+    # Fit with the rows in bd_clean order, exactly as rq2_loso.py does (the SVM's internal Platt
+    # cross-validation depends on row order), then put the probabilities back in the order of o.
+    in_o = lambda pr: pd.Series(pr, index=df.ID.values).loc[o.ID].values
+    p10 = in_o(loso(df, df.label.values, AQ, svm_pipe))
+    p9 = in_o(loso(df, df.label.values, [f for f in AQ if f != "A_Q1"], svm_pipe))
     y9 = (p9 >= 0.5).astype(int)
-    plr = loso(d, y, AQ, lr_pipe)
+    plr = in_o(loso(df, df.label.values, AQ, lr_pipe))
     ylr = (plr >= 0.5).astype(int)
     dd = []
     for _ in range(2000):
@@ -322,7 +325,7 @@ def main():
         ii = np.concatenate([idx[s] for s in ss])
         dd.append(roc_auc_score(y[ii], p9[ii]) - roc_auc_score(y[ii], p[ii]))
     s06 = d.school_id.values == "SCH_006"
-    add("### Post hoc refits (Section IV-C and IV-F)\n")
+    add("### Post hoc refits (Section IV-C and IV-G)\n")
     add(f"- A refit with scikit-learn {__import__('sklearn').__version__} reproduced "
         f"{int(((p10 >= .5) == (p >= .5)).sum())} of {len(p)} locked decisions")
     add(f"- Logistic regression (L2, C = 0.1): AUROC {roc_auc_score(y, plr):.3f}, vs AQ-10 total p = {pval(delong(y, plr, tot)[3])}; "
@@ -370,7 +373,7 @@ def main():
     f6 = (d2.school_id == "SCH_006") & (d2.yh == 1)
     other = (d2.label == 0) & (d2.school_id != "SCH_006")
     shap6 = d2.loc[f6, [f"SHAP_{a}" for a in AQ]].mean()
-    add("## False positives in school S06 (Section IV-F, Fig. 4)\n")
+    add("## False positives in school S06 (Section IV-G, Fig. 4)\n")
     add(f"- Flagged by the SVM {int(f6.sum())} of {int((d2.school_id == 'SCH_006').sum())}; by the rule "
         f"{int(((d2.school_id == 'SCH_006') & (d2.AQ_score_legacy >= 6)).sum())}; AQ-10 totals of those flagged "
         f"{d2.AQ_score_legacy[f6].min()} to {d2.AQ_score_legacy[f6].max()}")
@@ -385,7 +388,7 @@ def main():
     # ---- Subgroups and prevalence
     d2["rule"] = (d2.AQ_score_legacy >= 6).astype(int)
     d2["sex"] = d2.Gender.astype(str).str.strip().str.lower()
-    add("## Subgroups and screening prevalence (Section IV-G)\n")
+    add("## Subgroups and screening prevalence (Section IV-F)\n")
     rows = []
     for name, mk in [("Aged 4 to 7", d2.Age <= 7), ("Aged 8 to 11", d2.Age >= 8), ("Boys", d2.sex == "m"), ("Girls", d2.sex == "f")]:
         s_, m_ = mk & (d2.label == 1), mk & (d2.label == 0)

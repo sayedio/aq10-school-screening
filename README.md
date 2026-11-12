@@ -1,8 +1,8 @@
 # aq10-school-screening-code
 
-Analysis code for the paper _Machine Learning on AQ-10 Child Responses for School-Based Autism Screening: Validation in Unseen Schools Against a Score-Independent Label_.
+Analysis code for the paper _Machine Learning-Based School Screening for Autism Spectrum Disorder: A Multi-Center Study in Bangladesh_.
 
-The study compares a support vector machine trained on the ten graded AQ-10 Child answers with the published cut-off (score ≥ 6) in 843 children aged 4 to 11 years from five special and seven mainstream schools in Bangladesh. The reference label is school placement. The model is tested once on a held-out set and then with leave-one-school-out validation.
+The study compares a support vector machine trained on the ten graded AQ-10 Child answers with the published cut-off (score ≥ 6) in 843 children aged 4 to 11 years from five ASD and seven mainstream schools in Bangladesh. The reference label is school placement. The model is tested once on a held-out set and then with leave-one-school-out validation.
 
 **To check a number in the paper, open [`results/paper_numbers.md`](results/paper_numbers.md).**
 
@@ -10,7 +10,7 @@ The study compares a support vector machine trained on the ten graded AQ-10 Chil
 
 ## Data
 
-The questionnaire data are on Zenodo: **BD-AQ10**, version 1.0.0, [doi:10.5281/zenodo.23988060](https://doi.org/10.5281/zenodo.23988060). The files are shared on request for non-commercial research. Approved users receive `full_dataset.csv`, which `pipeline/prepare_from_zenodo.py` turns into the exact inputs of the locked run.
+The questionnaire data are on Zenodo: **BD-AQ10**, version 1.0.0, [doi:10.5281/zenodo.23988060](https://doi.org/10.5281/zenodo.23988060). The files are shared on request for non-commercial research. Approved users receive `full_dataset.csv`, which `pipeline/prepare_from_zenodo.py` turns into the exact inputs of the locked run. Its `group` column is `ASD` or `mainstream` (the first copies shared said `special` instead of `ASD`); the script accepts both.
 
 ## Contents
 
@@ -28,6 +28,7 @@ The questionnaire data are on Zenodo: **BD-AQ10**, version 1.0.0, [doi:10.5281/z
 | `analysis/make_figure1.py`                             | Draws Fig. 1 (study design)                                                                                                                                                                         |
 | `config/`                                              | Locked split by coded child ID (`split_assignment.csv`), fold indices and Phase-0 settings                                                                                                          |
 | [`results/paper_numbers.md`](results/paper_numbers.md) | The numbers behind each table, figure and key claim in the paper, from the locked run                                                                                                               |
+| `results/report_step5.md`, `results/report_step6.md`   | Reports of steps 5 and 6 from the verified rerun (school codes only)                                                                                                                                |
 
 ## Reproducing the paper
 
@@ -50,7 +51,7 @@ python analysis/paper_numbers.py > my_paper_numbers.md
 
 If you leave out the path, `prepare_from_zenodo.py` asks for it; in a Colab notebook, `%run pipeline/prepare_from_zenodo.py` shows an upload button instead. Each step writes into `$AQ10_BASE/aq_10/` and checks that the previous step finished. Steps 5 and 6 were added after the locked run to examine the school effects seen in RQ2; they use the locked SVM settings and predictions and write `step5_school_effects/` and `step6_robustness/`, each with a `report_step5.md` or `report_step6.md`. Compare `my_paper_numbers.md` with [`results/paper_numbers.md`](results/paper_numbers.md). Never commit the working folder.
 
-The locked run used Google Colab with the versions in `requirements.txt`. The post hoc refits in `analysis/paper_numbers.py` were run with scikit-learn 1.7.2 and reproduced 842 of the 843 locked leave-one-school-out decisions, so a different library version can move a result in the last decimal place.
+The locked run used Google Colab with scikit-learn 1.6.1, numpy 2.0.2, pandas 2.2.2 and shap 0.52.0. A rerun of the whole pipeline from `full_dataset.csv` on Google Colab (Python 3.13, scikit-learn 1.6.1, numpy 2.4.6, pandas 2.2.3, shap 0.54.1) reproduced every locked prediction of RQ1 to RQ3 and every SHAP value to within 10<sup>-14</sup>, and the refits in steps 5 and 6 and in `analysis/paper_numbers.py` reproduced all 843 locked leave-one-school-out decisions. scikit-learn is the version that matters; a different one can move a result in the last decimal place.
 
 ## Licence
 
@@ -59,4 +60,4 @@ Code: MIT (see `LICENSE`). The English AQ-10 Child items are copyrighted by Alli
 ## How to cite
 
 Paper: to be added after acceptance.
-Dataset: Sheikh, M. S., Munna, M. M. M., Habib, M. H. R., & Ahamed, M. S. (2026). _BD-AQ10: School-based AQ-10 Child data from special and mainstream schools in Bangladesh_ (Version 1.0.0) [Dataset]. Zenodo. https://doi.org/10.5281/zenodo.23988060
+Dataset: Sheikh, M. S., Munna, M. M. M., Habib, M. H. R., & Ahamed, M. S. (2026). _BD-AQ10: School-based AQ-10 Child data from ASD and mainstream schools in Bangladesh_ (Version 1.0.0) [Dataset]. Zenodo. https://doi.org/10.5281/zenodo.23988060
