@@ -1,8 +1,8 @@
 # aq10-school-screening-code
 
-Analysis code for the paper _Machine Learning on AQ-10 Child Responses for School-Based Autism Screening: Validation in Unseen Schools Against a Score-Independent Label_.
+Analysis code for the paper _Machine Learning-Based School Screening for Autism Spectrum Disorder: A Multi-Center Study in Bangladesh_.
 
-The study compares a support vector machine trained on the ten graded AQ-10 Child answers with the published cut-off (score ≥ 6) in 843 children aged 4 to 11 years from five special and seven mainstream schools in Bangladesh. The reference label is school placement. The model is tested once on a held-out set and then with leave-one-school-out validation.
+The study compares a support vector machine trained on the ten graded AQ-10 Child answers with the published cut-off (score ≥ 6) in 843 children aged 4 to 11 years from five ASD and seven mainstream schools in Bangladesh. The reference label is school placement. The model is tested once on a held-out set and then with leave-one-school-out validation.
 
 **To check a number in the paper, open [`results/paper_numbers.md`](results/paper_numbers.md).**
 
@@ -10,7 +10,7 @@ The study compares a support vector machine trained on the ten graded AQ-10 Chil
 
 ## Data
 
-The questionnaire data are on Zenodo: **BD-AQ10**, version 1.0.0, [doi:10.5281/zenodo.23988060](https://doi.org/10.5281/zenodo.23988060). The files are shared on request for non-commercial research. Approved users receive `full_dataset.csv`, which `pipeline/prepare_from_zenodo.py` turns into the exact inputs of the locked run.
+The questionnaire data are on Zenodo: **BD-AQ10**, version 1.0.0, [doi:10.5281/zenodo.23988060](https://doi.org/10.5281/zenodo.23988060). The files are shared on request for non-commercial research. Approved users receive `full_dataset.csv`, which `pipeline/prepare_from_zenodo.py` turns into the exact inputs of the locked run. Its `group` column is `ASD` or `mainstream` (the first copies shared said `special` instead of `ASD`); the script accepts both.
 
 ## Contents
 
@@ -60,4 +60,4 @@ Code: MIT (see `LICENSE`). The English AQ-10 Child items are copyrighted by Alli
 ## How to cite
 
 Paper: to be added after acceptance.
-Dataset: Sheikh, M. S., Munna, M. M. M., Habib, M. H. R., & Ahamed, M. S. (2026). _BD-AQ10: School-based AQ-10 Child data from special and mainstream schools in Bangladesh_ (Version 1.0.0) [Dataset]. Zenodo. https://doi.org/10.5281/zenodo.23988060
+Dataset: Sheikh, M. S., Munna, M. M. M., Habib, M. H. R., & Ahamed, M. S. (2026). _BD-AQ10: School-based AQ-10 Child data from ASD and mainstream schools in Bangladesh_ (Version 1.0.0) [Dataset]. Zenodo. https://doi.org/10.5281/zenodo.23988060
