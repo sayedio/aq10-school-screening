@@ -28,6 +28,7 @@ The questionnaire data are on Zenodo: **BD-AQ10**, version 1.0.0, [doi:10.5281/z
 | `analysis/make_figure1.py`                             | Draws Fig. 1 (study design)                                                                                                                                                                         |
 | `config/`                                              | Locked split by coded child ID (`split_assignment.csv`), fold indices and Phase-0 settings                                                                                                          |
 | [`results/paper_numbers.md`](results/paper_numbers.md) | The numbers behind each table, figure and key claim in the paper, from the locked run                                                                                                               |
+| `results/report_step5.md`, `results/report_step6.md`   | Reports of steps 5 and 6 from the verified rerun (school codes only)                                                                                                                                |
 
 ## Reproducing the paper
 
@@ -50,7 +51,7 @@ python analysis/paper_numbers.py > my_paper_numbers.md
 
 If you leave out the path, `prepare_from_zenodo.py` asks for it; in a Colab notebook, `%run pipeline/prepare_from_zenodo.py` shows an upload button instead. Each step writes into `$AQ10_BASE/aq_10/` and checks that the previous step finished. Steps 5 and 6 were added after the locked run to examine the school effects seen in RQ2; they use the locked SVM settings and predictions and write `step5_school_effects/` and `step6_robustness/`, each with a `report_step5.md` or `report_step6.md`. Compare `my_paper_numbers.md` with [`results/paper_numbers.md`](results/paper_numbers.md). Never commit the working folder.
 
-The locked run used Google Colab with the versions in `requirements.txt`. The post hoc refits in `analysis/paper_numbers.py` were run with scikit-learn 1.7.2 and reproduced 842 of the 843 locked leave-one-school-out decisions, so a different library version can move a result in the last decimal place.
+The locked run used Google Colab with scikit-learn 1.6.1, numpy 2.0.2, pandas 2.2.2 and shap 0.52.0. A rerun of the whole pipeline from `full_dataset.csv` on Google Colab (Python 3.13, scikit-learn 1.6.1, numpy 2.4.6, pandas 2.2.3, shap 0.54.1) reproduced every locked prediction of RQ1 to RQ3 and every SHAP value to within 10<sup>-14</sup>, and the refits in steps 5 and 6 and in `analysis/paper_numbers.py` reproduced all 843 locked leave-one-school-out decisions. scikit-learn is the version that matters; a different one can move a result in the last decimal place.
 
 ## Licence
 

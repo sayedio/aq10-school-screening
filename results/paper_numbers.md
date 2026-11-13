@@ -82,11 +82,11 @@ Intervals are school-clustered bootstrap intervals (2,000 resamples of schools w
 | S11 | mainstream | 55 | 0 | 2 |
 | S12 | mainstream | 37 | 1 | 2 |
 
-### Post hoc refits (Section IV-C and IV-F)
+### Post hoc refits (Section IV-C and IV-G)
 
-- A refit with scikit-learn 1.7.2 reproduced 842 of 843 locked decisions
+- A refit with scikit-learn 1.7.2 reproduced 843 of 843 locked decisions
 - Logistic regression (L2, C = 0.1): AUROC 0.959, vs AQ-10 total p = 0.23; special-school children found by the SVM only vs logistic regression only: 35 vs 6
-- SVM without item 1: sensitivity 0.943, specificity 0.950, AUROC 0.986 (difference from ten items [-0.002, 0.008]); flagged in S06 6 (ten items 18); false positives in the other mainstream schools 16 (ten items 16)
+- SVM without item 1: sensitivity 0.943, specificity 0.950, AUROC 0.986 (difference from ten items [-0.003, 0.008]); flagged in S06 6 (ten items 18); false positives in the other mainstream schools 16 (ten items 16)
 
 ## Ten versus fourteen items (Section IV-D)
 
@@ -117,14 +117,14 @@ Intervals are school-clustered bootstrap intervals (2,000 resamples of schools w
 - Rank stability across held-out schools: mean pairwise ρ 0.70 (range 0.02 to 0.94); without S06 0.79 (range 0.60 to 0.94)
 - Item 1 endorsed: special schools 0.648, mainstream schools 0.859
 
-## False positives in school S06 (Section IV-F, Fig. 4)
+## False positives in school S06 (Section IV-G, Fig. 4)
 
 - Flagged by the SVM 18 of 63; by the rule 0; AQ-10 totals of those flagged 1 to 4
 - Answered definitely disagree to item 1: 16 of the 18 flagged; 1 of 377 children in the other mainstream schools; 89 of 403 special-school children
 - Mean SHAP value among the 18 flagged: item 1 +0.24; largest other item +0.06
 - False positives outside S06: SVM 16, rule 20, of 377
 
-## Subgroups and screening prevalence (Section IV-G)
+## Subgroups and screening prevalence (Section IV-F)
 
 | Subgroup | Special | Sensitivity | Mainstream | Specificity |
 |---|---|---|---|---|

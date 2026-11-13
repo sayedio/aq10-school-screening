@@ -1,8 +1,11 @@
-# Versions of the locked Colab run where they were recorded
-numpy==2.0.2
-pandas==2.2.2
+# scikit-learn decides the model results and must be the version of the locked run.
 scikit-learn==1.6.1
-shap==0.52.0
+# Locked run (Google Colab, 2026): numpy 2.0.2, pandas 2.2.2, shap 0.52.0.
+# Verified rerun (Google Colab, Python 3.13): numpy 2.4.6, pandas 2.2.3, shap 0.54.1;
+# it reproduced every locked prediction. Pinning the old numpy and pandas fails on Python 3.13.
+numpy
+pandas
+shap
 scipy
 joblib
 matplotlib
