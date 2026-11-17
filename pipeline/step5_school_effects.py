@@ -6,9 +6,10 @@ Run after rq4_explanation.py (it reads the RQ1 to RQ3 outputs and needs the RQ4 
 
 Added after the locked RQ1-RQ4 run, to examine where leave-one-school-out validation (RQ2)
 lost specificity. It uses the locked SVM settings and the locked predictions and proposes no
-new model. Output: <AQ10_BASE>/aq_10/step5_school_effects/ (tables/, figures/,
-report_step5.md) and logs/step5_done.flag. Only school codes S01-S12 are written; no school
-names and no child IDs. Takes about 5-10 minutes.
+new model. Output: <work>/aq_10/step5_school_effects/ (tables/ and report_step5.md),
+logs/step5_done.flag, and two figures in <work>/aq_10/figures/: item 1 and school effects, and the
+influence of each training school. Only school codes S01-S12 are written; no school names and no
+child IDs. Takes about 5-10 minutes.
 
 A. The locked leave-one-school-out decisions reproduced in this environment
 B. Do schools leave a fingerprint in the answers? School profiles, answer-by-school association,
@@ -29,6 +30,7 @@ warnings.filterwarnings("ignore")
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+from matplotlib.patches import Patch
 import numpy as np
 import pandas as pd
 import sklearn
@@ -47,10 +49,10 @@ np.random.seed(SEED)
 print("=" * 78)
 print("STEP 5 - SCHOOL EFFECTS")
 print("=" * 78)
-BASE = os.environ.get("AQ10_BASE", "/content/drive/MyDrive/Autism")
+BASE = os.environ.get("AQ10_BASE", os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "work"))
 PROJECT = os.path.join(BASE, "aq_10")
 OUT = os.path.join(PROJECT, "step5_school_effects")
-TAB, FIG = os.path.join(OUT, "tables"), os.path.join(OUT, "figures")
+TAB, FIG = os.path.join(OUT, "tables"), os.path.join(PROJECT, "figures")
 RQ4_FLAG = os.path.join(PROJECT, "logs", "rq4_done.flag")
 if not os.path.exists(RQ4_FLAG):
     sys.exit(f"Run rq1_baseline.py to rq4_explanation.py first (missing {RQ4_FLAG}).")
@@ -182,12 +184,6 @@ def save(df, name):
     print("  [saved]", name)
 
 
-def savefig(fig, name):
-    fig.savefig(os.path.join(FIG, name), dpi=300, bbox_inches="tight")
-    plt.close(fig)
-    print("  [saved]", name)
-
-
 REPORT = ["# Step 5 - School effects", "",
           f"scikit-learn {sklearn.__version__}, numpy {np.__version__}, pandas {pd.__version__}; seed {SEED}. "
           "Added after the locked RQ1-RQ4 run; uses the locked SVM settings and predictions.", ""]
@@ -223,7 +219,7 @@ write_report(["## A. Reproducing the locked leave-one-school-out run", "",
 # ══════════════════════════════════════════════════════════════════════════════
 rng = np.random.default_rng(SEED)
 R = ["## B. Do schools leave a fingerprint in the answers?", "",
-     "### B1. School profiles (T_s5_B1_school_profile.csv, F_s5_B1_endorsement_by_school.png)", "",
+     "### B1. School profiles (T_s5_B1_school_profile.csv, T_s5_B1_item_endorsement_by_school.csv)", "",
      "| School | Group | n | Age | Boys % | AQ total | Rule + % | SVM flagged % | ERS | Q1 definitely disagree % |",
      "|---|---|---|---|---|---|---|---|---|---|"]
 prof = []
@@ -246,23 +242,7 @@ R += [f"| {r.school} | {r.group} | {r.n} | {r.age_mean:.1f} | {r.boys_pct:.0f} |
 order = [CODE[s] for s in SP + MN]
 endorse = (bd[AQ] >= 2).groupby(bd.code).mean().loc[order]
 endorse.columns = RAW
-grp_rate = {g: (bd.loc[bd.label == g, AQ] >= 2).mean().values for g in (0, 1)}
-dev = endorse.copy()
-for s in SP + MN:
-    dev.loc[CODE[s]] = endorse.loc[CODE[s]].values - grp_rate[1 if s in SP else 0]
 save((100 * endorse).round(1).reset_index().rename(columns={"code": "school"}), "T_s5_B1_item_endorsement_by_school.csv")
-fig, ax = plt.subplots(figsize=(8.5, 6))
-im = ax.imshow(100 * dev.values.astype(float), cmap="RdBu_r", vmin=-40, vmax=40, aspect="auto")
-ax.set_xticks(range(10)); ax.set_xticklabels(RAW)
-ax.set_yticks(range(len(order)))
-ax.set_yticklabels([f"{CODE[s]} ({'ASD' if s in SP else 'mainstream'})" for s in SP + MN])
-for i in range(len(order)):
-    for j in range(10):
-        ax.text(j, i, f"{100 * endorse.values[i, j]:.0f}", ha="center", va="center", fontsize=7)
-ax.axhline(len(SP) - 0.5, color="k", lw=1)
-fig.colorbar(im, ax=ax, label="Endorsement minus own-group rate (percentage points)")
-ax.set_title("Item endorsement (%) by school; colour = difference from the school's own group")
-savefig(fig, "F_s5_B1_endorsement_by_school.png")
 
 
 def cramers_v(a, b):
@@ -326,14 +306,6 @@ R += ["", "### B3. Share of variance between schools, within each group (ICC(1);
       "| Variable | ICC ASD | p | ICC mainstream | p | ICC mainstream without S06 | p |", "|---|---|---|---|---|---|---|"]
 R += [f"| {r.variable} | {f3(r.ICC_ASD)} | {pfmt(r.p_ASD)} | {f3(r.ICC_mainstream)} | {pfmt(r.p_mainstream)} | "
       f"{f3(r.ICC_mainstream_without_S06)} | {pfmt(r.p_mainstream_without_S06)} |" for r in B3.itertuples()]
-fig, ax = plt.subplots(figsize=(10, 4))
-xx = np.arange(len(B3)); w = 0.27
-for k, (nm, col) in enumerate((("ASD", "#c0504d"), ("mainstream", "#4f81bd"), ("mainstream_without_S06", "#9bbb59"))):
-    ax.bar(xx + (k - 1) * w, B3[f"ICC_{nm}"].clip(lower=0), w, label=nm.replace("_", " "), color=col)
-ax.set_xticks(xx); ax.set_xticklabels(B3.variable, rotation=45, ha="right"); ax.set_ylabel("ICC(1)")
-ax.legend(); ax.set_title("Variance between schools within each group")
-savefig(fig, "F_s5_B3_icc.png")
-
 fp_mask = (y == 0) & (bd.f_lock.values == 1); tn_mask = (y == 0) & (bd.f_lock.values == 0)
 miss = (y == 1) & (bd.rule.values == 0)
 svm_only = miss & (bd.f_lock.values == 1); neither = miss & (bd.f_lock.values == 0)
@@ -488,24 +460,6 @@ R += ["", "### C3. Leave one ASD and one mainstream school out together (35 test
       f"- Sensitivity SVM: {q(C3.Sens_svm)}; rule: {q(C3.Sens_rule)}; SVM higher in {(C3.Sens_svm > C3.Sens_rule).sum()} of 35.",
       f"- Specificity SVM: {q(C3.Spec_svm)}; rule: {q(C3.Spec_rule)}; SVM lower in {(C3.Spec_svm < C3.Spec_rule).sum()} of 35.",
       f"- Folds containing S06: SVM specificity {q(C3.Spec_svm[w06])}; other folds {q(C3.Spec_svm[~w06])}."]
-fig, axs = plt.subplots(1, 2, figsize=(10, 4))
-axs[0].scatter(C3.AUROC_total[~w06], C3.AUROC_svm[~w06], label="other pairs"); axs[0].scatter(C3.AUROC_total[w06], C3.AUROC_svm[w06], label="pairs with S06")
-lim = [min(C3.AUROC_total.min(), C3.AUROC_svm.min()) - 0.01, 1.0]
-axs[0].plot(lim, lim, "k--", lw=0.8); axs[0].set_xlabel("AUROC, AQ-10 total"); axs[0].set_ylabel("AUROC, SVM"); axs[0].legend()
-axs[1].scatter(C3.Spec_svm[~w06], C3.Sens_svm[~w06], label="SVM, other pairs"); axs[1].scatter(C3.Spec_svm[w06], C3.Sens_svm[w06], label="SVM, pairs with S06")
-axs[1].scatter(C3.Spec_rule, C3.Sens_rule, marker="s", label="rule (S >= 6)", alpha=0.6)
-axs[1].set_xlabel("Specificity"); axs[1].set_ylabel("Sensitivity"); axs[1].legend(fontsize=8)
-fig.suptitle("Leave one ASD and one mainstream school out (35 folds)")
-savefig(fig, "F_s5_C3_leave_pair_out.png")
-
-fig, ax = plt.subplots(figsize=(10, 4))
-xx = np.arange(len(C1)); k10 = by_school.set_index("school").loc[C1.school, 10].values
-ax.bar(xx - 0.27, C1.flagged_pct_randomCV_seen, 0.27, label="school seen (random CV)")
-ax.bar(xx, C1.flagged_pct_LOSO_unseen, 0.27, label="school unseen (LOSO)")
-ax.bar(xx + 0.27, k10, 0.27, label="unseen + 10 local children")
-ax.set_xticks(xx); ax.set_xticklabels([f"{a}\n{b[:4]}" for a, b in zip(C1.school, C1.group)])
-ax.set_ylabel("Children flagged (%)"); ax.legend(fontsize=8); ax.set_title("Flag rate by school: seen, unseen and locally adapted")
-savefig(fig, "F_s5_C_seen_unseen_local.png")
 write_report(R + ["", f"(C took {time.time() - t0:.0f} s)"])
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -542,7 +496,6 @@ R += [f"| {r.item1_answer} | {r.flagged_of_the_S06_flagged} | {r.S06_flagged} | 
       for r in D1.itertuples()]
 
 rows, ice = [], []
-fig, axs = plt.subplots(2, 5, figsize=(14, 5.5), sharey=True)
 for j, a in enumerate(AQ):
     probs = np.vstack([predict_with(j, v) for v in range(4)])
     for gname, gmask in (("ASD", y == 1), ("mainstream", y == 0), ("all", ALL)):
@@ -552,15 +505,6 @@ for j, a in enumerate(AQ):
     dec = (np.diff(probs, axis=0) < -0.01).any(axis=0)
     ice.append({"item": RAW[j], "pct_children_with_a_decrease_all": 100 * dec.mean(),
                 "pct_ASD": 100 * dec[y == 1].mean(), "pct_mainstream": 100 * dec[y == 0].mean()})
-    ax = axs.ravel()[j]
-    ax.plot(range(4), probs[:, y == 1].mean(1), "o-", color="#c0504d", label="ASD")
-    ax.plot(range(4), probs[:, y == 0].mean(1), "o-", color="#4f81bd", label="mainstream")
-    ax.set_title(RAW[j]); ax.set_xticks(range(4))
-axs[0, 0].legend(fontsize=8)
-for ax in axs[1]:
-    ax.set_xlabel("aligned value (0 = no trait, 3 = strongest)")
-fig.suptitle("Mean predicted probability when one item is set to each value (each child scored by its own LOSO model)")
-savefig(fig, "F_s5_D2_item_response_curves.png")
 D2 = pd.DataFrame(rows); D2i = pd.DataFrame(ice)
 save(D2.round(4), "T_s5_D2_partial_dependence.csv"); save(D2i.round(2), "T_s5_D2_nonmonotone_children.csv")
 nonmono = D2[(D2.group == "all") & ~D2.monotone_increasing].item.tolist()
@@ -614,15 +558,6 @@ R += ["", "### D4. Which training school taught the pattern? (one training schoo
       "- Largest changes anywhere (held-out school, removed school, change in pp):"]
 stack = infl.stack().sort_values(key=np.abs, ascending=False).head(8)
 R += [f"  - {h}, without {e}: {v:+.1f}" for (h, e), v in stack.items()]
-fig, ax = plt.subplots(figsize=(7.5, 6))
-lim = np.nanmax(np.abs(infl.values))
-im = ax.imshow(infl.values.astype(float), cmap="RdBu_r", vmin=-lim, vmax=lim)
-ax.set_xticks(range(12)); ax.set_xticklabels(infl.columns, rotation=90); ax.set_yticks(range(12)); ax.set_yticklabels(infl.index)
-ax.set_xlabel("training school removed"); ax.set_ylabel("held-out school")
-fig.colorbar(im, ax=ax, label="change in flag rate (percentage points)")
-ax.set_title("Influence of each training school on each held-out school")
-savefig(fig, "F_s5_D4_training_school_influence.png")
-
 base_auc = auc(y, p_ref)
 rows = [{"item_dropped": "none", "AUROC": base_auc, "dAUROC": 0.0, "dAUROC_lo": 0.0, "dAUROC_hi": 0.0,
          **{k: v for k, v in rates(y, f_ref).items() if k in ("Sens", "Spec")},
@@ -672,6 +607,119 @@ for r in D7[D7.n > 0].itertuples():
     dist = ", ".join(f"{t}: {getattr(r, f'total_{t}')}" for t in range(11) if getattr(r, f"total_{t}") > 0)
     R += [f"- {r.group}, {r.category} (n = {r.n}): totals {dist}"]
 write_report(R + ["", f"(D took {time.time() - t0:.0f} s; step 5 total {time.time() - T_START:.0f} s)"])
+
+# ══════════════════════════════════════════════════════════════════════════════
+# FIGURES
+# ══════════════════════════════════════════════════════════════════════════════
+
+import logging
+logging.getLogger("matplotlib.font_manager").setLevel(logging.ERROR)   # Arial is often missing on Linux; no warning flood
+FIG_STYLE = {"font.family": "sans-serif", "font.sans-serif": ["Arial", "Liberation Sans", "DejaVu Sans"],
+             "font.size": 7, "axes.linewidth": 0.6, "xtick.major.width": 0.6, "ytick.major.width": 0.6,
+             "xtick.major.size": 2.5, "ytick.major.size": 2.5, "axes.spines.top": False, "axes.spines.right": False}
+FIG_DIR = FIG
+os.makedirs(FIG_DIR, exist_ok=True)
+FIGURES_SAVED = []
+
+
+def save_figure(fig, name):
+    """Save a figure at 600 dpi in <work>/aq_10/figures/ and close it."""
+    path = os.path.join(FIG_DIR, name)
+    fig.savefig(path, dpi=600)
+    plt.close(fig)
+    FIGURES_SAVED.append(name)
+    print(f"  [figure] {path}")
+
+
+print("\nFigures...")
+sh5 = pd.read_csv(os.path.join(PROJECT, "rq4", "tables", "T_rq4_shap_values_per_instance.csv"), usecols=["ID", "SHAP_A_Q1"])
+d5 = bd[["ID", "label", "code", "Q1"]].merge(sh5, on="ID")
+assert len(d5) == 843
+ANS = [(4, "Definitely disagree", "#D55E00"), (3, "Slightly disagree", "#F3C6A5"),
+       (2, "Slightly agree", "#BFD7EA"), (1, "Definitely agree", "#4A8FC7")]   # raw codes of item 1
+with plt.rc_context(FIG_STYLE):
+    fig = plt.figure(figsize=(7.16, 2.85))
+    ax_a = fig.add_axes([0.165, 0.30, 0.24, 0.64])
+    ax_b = fig.add_axes([0.475, 0.30, 0.205, 0.64])
+    ax_c = fig.add_axes([0.775, 0.30, 0.215, 0.64])
+    # (a) answers to item 1 in each ASD school, in S06 and in the other mainstream schools
+    groups5 = [(f"{CODE[s]} (ASD, {len(IDX[s])})", (d5.code == CODE[s]).values) for s in SP]
+    groups5 += [(f"S06 (mainstream, {int(S06.sum())})", (d5.code == "S06").values),
+                (f"Other mainstream ({int(OTHER_MN.sum())})", ((d5.label == 0) & (d5.code != "S06")).values)]
+    for i, (name, m) in enumerate(groups5):
+        yy = len(groups5) - 1 - i
+        left = 0.0
+        for code_, _, col in ANS:
+            wv = 100 * (d5.Q1.values[m] == code_).mean()
+            ax_a.barh(yy, wv, left=left, height=0.72, color=col, edgecolor="white", linewidth=0.5)
+            if wv >= 14:
+                ax_a.text(left + wv / 2, yy, f"{wv:.0f}%", ha="center", va="center", fontsize=6,
+                          color="white" if code_ in (4, 1) else "#222222")
+            left += wv
+    ax_a.set_yticks(range(len(groups5))[::-1]); ax_a.set_yticklabels([g[0] for g in groups5], fontsize=6.4)
+    ax_a.axhline(1.5, color="#444444", lw=0.6, ls=(0, (2, 2)))
+    ax_a.set_xlim(0, 100); ax_a.set_xticks([0, 25, 50, 75, 100]); ax_a.set_xlabel("Answers to item 1 (%)")
+    ax_a.spines["left"].set_visible(False)
+    ax_a.tick_params(axis="y", length=0)
+    ax_a.legend(handles=[Patch(color=col) for _, _, col in ANS], labels=[l for _, l, _ in ANS],
+                loc="upper center", bbox_to_anchor=(0.30, -0.20), ncol=2, frameon=False, fontsize=6.2,
+                handlelength=1.0, columnspacing=1.0)
+    # (b) SHAP value of item 1 for every child, by answer, with the means
+    jit = np.random.default_rng(1)                               # jitter only; no effect on any number
+    pos5 = {4: 0, 3: 1, 2: 2, 1: 3}
+    for lab, col, nm in ((1, "#9B2C5E", "ASD school"), (0, "#4C9BD5", "mainstream")):
+        m = (d5.label == lab).values
+        xj = d5.Q1.values[m].astype(int)
+        ax_b.scatter(np.vectorize(pos5.get)(xj) + jit.uniform(-0.22, 0.22, m.sum()), d5.SHAP_A_Q1.values[m],
+                     s=2.2, color=col, alpha=0.55, linewidths=0, label=nm)
+    for code_, xp in pos5.items():
+        sel = d5.Q1.values == code_
+        if sel.any():
+            mu = d5.SHAP_A_Q1.values[sel].mean()
+            ax_b.plot([xp - 0.30, xp + 0.30], [mu, mu], color="#111111", lw=1.6, solid_capstyle="butt")
+    ax_b.plot([], [], color="#111111", lw=1.6, label="mean")
+    ax_b.axhline(0, color="#888888", lw=0.6, ls=(0, (2, 2)))
+    ax_b.set_xticks(range(4)); ax_b.set_xticklabels(["Def.\ndis.", "Sl.\ndis.", "Sl.\nagree", "Def.\nagree"])
+    ax_b.set_xlabel("Answer to item 1"); ax_b.set_ylabel("SHAP value of item 1")
+    ax_b.legend(loc="upper right", frameon=False, fontsize=6.2, markerscale=3, handlelength=1.2)
+    # (c) children flagged in each mainstream school: seen, unseen, unseen + 10 local children
+    mn5 = [CODE[s] for s in MN]
+    c1_ = C1.set_index("school"); k10_ = by_school.set_index("school")
+    series5 = [("seen in training", c1_.loc[mn5, "flagged_pct_randomCV_seen"].values, "#B8B8B8"),
+               ("unseen", c1_.loc[mn5, "flagged_pct_LOSO_unseen"].values, "#D55E00"),
+               ("unseen + 10 local children", k10_.loc[mn5, 10].values, "#4A8FC7")]
+    hgt = 0.26
+    for k, (nm, vals, col) in enumerate(series5):
+        ax_c.barh(np.arange(len(mn5))[::-1] + (1 - k) * hgt, vals, height=hgt, color=col, label=nm, linewidth=0)
+    ax_c.set_yticks(np.arange(len(mn5))[::-1]); ax_c.set_yticklabels(mn5, fontsize=6.4)
+    xmax5 = max(5.0, 1.12 * max(float(np.nanmax(v)) for _, v, _ in series5))
+    ax_c.set_xlabel("Children flagged (%)"); ax_c.set_xlim(0, xmax5)
+    ax_c.tick_params(axis="y", length=0)
+    ax_c.legend(loc="upper center", bbox_to_anchor=(0.40, -0.20), frameon=False, fontsize=6.2, handlelength=1.0)
+    for ax_, letter, xoff in ((ax_a, "(a)", -0.62), (ax_b, "(b)", -0.30), (ax_c, "(c)", -0.22)):
+        ax_.text(xoff, 1.04, letter, transform=ax_.transAxes, fontsize=8, fontweight="bold", va="bottom")
+    save_figure(fig, "step5_item1_and_school_effects.png")
+
+# Influence of each training school on the share flagged in each left-out school
+with plt.rc_context(FIG_STYLE):
+    fig = plt.figure(figsize=(4.6, 3.9))
+    ax = fig.add_axes([0.12, 0.14, 0.7, 0.78])
+    cax = fig.add_axes([0.85, 0.2, 0.025, 0.66])
+    vals_ = infl.values.astype(float)
+    lim_ = max(1.0, float(np.nanmax(np.abs(vals_))))
+    im_ = ax.imshow(vals_, cmap="RdBu_r", vmin=-lim_, vmax=lim_, aspect="auto")
+    for i in range(vals_.shape[0]):
+        for j in range(vals_.shape[1]):
+            if not np.isnan(vals_[i, j]):
+                ax.text(j, i, f"{vals_[i, j]:+.0f}", ha="center", va="center", fontsize=5,
+                        color="white" if abs(vals_[i, j]) > 0.6 * lim_ else "#222222")
+    ax.set_xticks(range(len(infl.columns))); ax.set_xticklabels(infl.columns, rotation=90)
+    ax.set_yticks(range(len(infl.index))); ax.set_yticklabels(infl.index)
+    ax.set_xlabel("Training school removed"); ax.set_ylabel("Left-out school")
+    ax.set_title("Change in children flagged in the left-out school (percentage points)", fontsize=6.5, loc="left")
+    fig.colorbar(im_, cax=cax)
+    save_figure(fig, "step5_training_school_influence.png")
+
 
 with open(os.path.join(PROJECT, "logs", "step5_done.flag"), "w") as fh:
     fh.write(f"step5_school_effects complete\nscikit-learn={sklearn.__version__}\nrefit_agreement={agree}/843\n")

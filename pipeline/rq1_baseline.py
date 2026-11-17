@@ -1,5 +1,12 @@
+"""RQ1 - Five learners, one locked model and one test against the AQ-10 rule.
 
-
+Reads the files written by pipeline/prepare_from_zenodo.py. Selects the model by five-fold
+cross-validation on the development set (86 settings), refits it and tests it once on the
+169 test children against the AQ-10 rule (score of 6 or more). Writes tables, predictions and
+the locked SVM settings to <work>/aq_10/rq1_baseline/, and three figures to <work>/aq_10/figures/:
+model selection, the test set (ROC curves and the SVM against the rule), and calibration with
+net benefit.
+"""
 import os, json, time, random, itertools, warnings
 from datetime import datetime
 
@@ -14,11 +21,7 @@ import joblib
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-import matplotlib.gridspec as gridspec
-import seaborn as sns
 np.random.seed(SEED)
-
-# from google.colab import drive  # Colab-only; locally, set the AQ10_BASE environment variable instead
 
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
@@ -32,10 +35,9 @@ from sklearn.metrics import (
     average_precision_score, accuracy_score,
     precision_score, recall_score, f1_score,
     brier_score_loss, confusion_matrix,
-    ConfusionMatrixDisplay, cohen_kappa_score,
+    cohen_kappa_score,
 )
 from scipy.stats import chi2 as chi2_dist
-from matplotlib.lines import Line2D
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -48,9 +50,7 @@ print("PRIMARY: McNemar (M* binary vs AQ-10 ≥6)  |  Fixed t=0.50  |  80/20 spl
 print("NO AUROC comparison with binary rule — methodologically invalid")
 print("=" * 78)
 
-# drive.mount("/content/drive", force_remount=True)
-
-BASE    = os.environ.get("AQ10_BASE", "/content/drive/MyDrive/Autism")
+BASE    = os.environ.get("AQ10_BASE", os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "work"))
 PROJECT = os.path.join(BASE, "aq_10")
 
 SPLITS_DIR    = os.path.join(PROJECT, "data/splits")
@@ -64,14 +64,12 @@ DIRS = {
     "root":          RQ1_DIR,
     "tables":        os.path.join(RQ1_DIR, "tables"),
     "paper_ready":   os.path.join(RQ1_DIR, "tables", "paper_ready"),
-    "figures":       os.path.join(RQ1_DIR, "figures"),
     "results":       os.path.join(RQ1_DIR, "results"),
     "models":        os.path.join(RQ1_DIR, "models"),
     "predictions":   os.path.join(RQ1_DIR, "predictions"),
     "logs":          os.path.join(RQ1_DIR, "logs"),
     "config":        os.path.join(RQ1_DIR, "config"),
     "paper_tables":  os.path.join(PROJECT, "paper_results", "rq1", "tables"),
-    "paper_figures": os.path.join(PROJECT, "paper_results", "rq1", "figures"),
 }
 for p in DIRS.values():
     os.makedirs(p, exist_ok=True)
@@ -113,14 +111,6 @@ MODEL_FILE = {
     "Random Forest":          "random_forest.joblib",
     "K-Nearest Neighbors":    "knn.joblib",
     "Naive Bayes":            "naive_bayes.joblib",
-}
-COLORS = {
-    "Logistic Regression":    "#1f77b4",
-    "Support Vector Machine": "#ff7f0e",
-    "Random Forest":          "#2ca02c",
-    "K-Nearest Neighbors":    "#9467bd",
-    "Naive Bayes":            "#d62728",
-    "AQ-10 Clinical Rule":    "#444444",
 }
 
 
@@ -318,19 +308,6 @@ def apply_aq10_calibrator(lr, X_arr):
     return lr.predict_proba(scores)[:, 1]
 
 
-# ── Reliability curve ──────────────────────────────────────────────────────
-def reliability_curve(y_true, y_prob, n_bins=10):
-    y_true = np.asarray(y_true); y_prob = np.asarray(y_prob)
-    bins = np.linspace(0, 1, n_bins+1)
-    cx, cy = [], []
-    for i in range(n_bins):
-        lo, hi = bins[i], bins[i+1]
-        mask = (y_prob >= lo) & ((y_prob <= hi) if i==n_bins-1 else (y_prob < hi))
-        if mask.sum() == 0: continue
-        cx.append(float(y_prob[mask].mean())); cy.append(float(y_true[mask].mean()))
-    return np.array(cx), np.array(cy)
-
-
 # ── DCA helpers ────────────────────────────────────────────────────────────
 def net_benefit(y_true, y_prob, pt):
     if pt <= 0 or pt >= 1: return np.nan
@@ -357,10 +334,6 @@ def save_pr(df, name):
         df.to_csv(os.path.join(d, name), index=False)
 
 
-def save_fig(fig, name):
-    for d in [DIRS["figures"], DIRS["paper_figures"]]:
-        fig.savefig(os.path.join(d, name), dpi=300, bbox_inches="tight")
-    plt.close(fig)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -635,8 +608,6 @@ test_export["pred_Mstar"] = test_export[f"pred_{bsk}"]
 test_export["Mstar_Name"] = best_algo
 test_export.to_csv(os.path.join(DIRS["predictions"],"test_predictions.csv"), index=False)
 save_tbl(test_export, "T_rq1_test_predictions.csv")
-
-clr_mstar = COLORS[best_algo]
 
 print(f"\n  {'Model':<30} {'Sens':>7} {'Spec':>7} {'PPV':>7} {'NPV':>7} "
       f"{'F1':>7} {'Acc':>7} {'AUROC':>7}")
@@ -1021,316 +992,133 @@ print(f"  Locked M* = {best_algo}  |  Params = {best_params}  |  t = {THRESHOLD}
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# SECTION 15 — PUBLICATION FIGURES
+# SECTION 15: FIGURES
 # ══════════════════════════════════════════════════════════════════════════════
 
-print("\n[Step 15]  Generating publication figures ...")
-
-plt.rcParams.update({
-    "font.size": 11, "axes.titlesize": 12, "axes.labelsize": 11,
-    "axes.spines.top": False, "axes.spines.right": False,
-    "font.family": "DejaVu Sans",
-})
-
-n_m = len(ALGO_ORDER)
-
-
-# ── Figure 1: Confusion Matrices with metric annotations ─────────────────
-fig, axes = plt.subplots(1, 2, figsize=(12, 5))
-
-for ax_, lbl_, pred_, title_ in [
-    (axes[0], best_algo,             test_preds[best_algo],
-     f"M* ({best_algo})\nThreshold = {THRESHOLD}"),
-    (axes[1], "AQ-10 Clinical Rule", rule_pred_test,
-     "AQ-10 Clinical Rule\nScore ≥ 6"),
-]:
-    m_   = point_est[lbl_]
-    cm_  = confusion_matrix(y_test, pred_, labels=[0,1])
-    disp = ConfusionMatrixDisplay(cm_, display_labels=["Non-ASD","ASD"])
-    disp.plot(ax=ax_, colorbar=False, cmap="Blues")
-    ax_.set_title(title_, fontsize=11, pad=10)
-    ax_.set_xlabel("Predicted label")
-    ax_.set_ylabel("True label")
-    # Metric annotations below matrix
-    ann = (f"Sens={m_['Sensitivity']:.3f}  Spec={m_['Specificity']:.3f}\n"
-           f"PPV={m_['Precision_PPV']:.3f}   NPV={m_['NPV']:.3f}\n"
-           f"F1={m_['F1_Score']:.3f}    Acc={m_['Accuracy']:.3f}")
-    ax_.text(0.5, -0.22, ann, ha="center", va="top",
-             transform=ax_.transAxes, fontsize=9, family="monospace",
-             bbox=dict(boxstyle="round,pad=0.3", facecolor="#f5f5f5", alpha=0.8))
-
-fig.suptitle("RQ1 — Confusion Matrices: M* vs AQ-10 Clinical Rule\n"
-             f"Both evaluated at FIXED thresholds  (N={total_test} test participants)",
-             fontsize=12, y=1.02)
-fig.tight_layout()
-save_fig(fig, "F_rq1_1_confusion_matrices.png")
-print("  F1: Confusion matrices (M* vs AQ-10 Rule, annotated)")
+import logging
+logging.getLogger("matplotlib.font_manager").setLevel(logging.ERROR)   # Arial is often missing on Linux; no warning flood
+FIG_STYLE = {"font.family": "sans-serif", "font.sans-serif": ["Arial", "Liberation Sans", "DejaVu Sans"],
+             "font.size": 7, "axes.linewidth": 0.6, "xtick.major.width": 0.6, "ytick.major.width": 0.6,
+             "xtick.major.size": 2.5, "ytick.major.size": 2.5, "axes.spines.top": False, "axes.spines.right": False}
+FIG_DIR = os.path.join(PROJECT, "figures")
+os.makedirs(FIG_DIR, exist_ok=True)
+FIGURES_SAVED = []
 
 
-# ── Figure 2: Forest Plot — binary metrics with 95% CI ───────────────────
-fig, ax = plt.subplots(figsize=(9, 5.5))
-
-forest_keys = ["Sensitivity","Specificity","Precision_PPV","NPV","F1_Score","Accuracy","Kappa"]
-y_lbl = ["Sensitivity","Specificity","PPV","NPV","F1","Accuracy","Kappa"]
-y_pos = np.arange(len(forest_keys))
-
-for m_label, clr_, mrk_, off_ in [
-    (best_algo,            clr_mstar, "D", -0.18),
-    ("AQ-10 Clinical Rule","#555555", "s",  0.18),
-]:
-    row_ci = ci_df[ci_df["Model"] == m_label].iloc[0]
-    for yi, k in zip(y_pos, forest_keys):
-        pt_  = row_ci.get(f"{k}_Point", np.nan)
-        lo_  = row_ci.get(f"{k}_95CI_Lo", np.nan)
-        hi_  = row_ci.get(f"{k}_95CI_Hi", np.nan)
-        y_   = yi + off_
-        if pt_ is None or np.isnan(pt_): continue
-        if lo_ is not None and hi_ is not None and not (np.isnan(lo_) or np.isnan(hi_)):
-            ax.plot([lo_, hi_], [y_, y_], "-", color=clr_, lw=1.8, alpha=0.7)
-        ax.plot(pt_, y_, marker=mrk_, color=clr_, ms=9, zorder=3)
-
-leg_els = [
-    Line2D([0],[0],marker="D",color="w",markerfacecolor=clr_mstar,ms=10,
-           label=f"M* ({short_name(best_algo)}, t={THRESHOLD})"),
-    Line2D([0],[0],marker="s",color="w",markerfacecolor="#555555",ms=10,
-           label="AQ-10 Rule (≥6)"),
-]
-ax.legend(handles=leg_els, fontsize=9, loc="lower right")
-ax.set_yticks(y_pos); ax.set_yticklabels(y_lbl, fontsize=10)
-ax.set_xlabel("Metric value  [95% Percentile Bootstrap CI, B=2000]")
-ax.set_title(f"RQ1 — Binary Screening Performance: M* vs AQ-10 Rule\n"
-             "Both classifiers at FIXED thresholds — No AUROC comparison")
-ax.set_xlim(-0.02, 1.10)
-ax.grid(True, axis="x", linestyle=":", alpha=0.4)
-ax.axvline(0.50, color="gray", lw=1.0, ls=":", alpha=0.5)
-save_fig(fig, "F_rq1_2_forest_plot_binary_metrics.png")
-print("  F2: Forest plot — binary metrics + 95% CI")
+def save_figure(fig, name):
+    """Save a figure at 600 dpi in <work>/aq_10/figures/ and close it."""
+    path = os.path.join(FIG_DIR, name)
+    fig.savefig(path, dpi=600)
+    plt.close(fig)
+    FIGURES_SAVED.append(name)
+    print(f"  [figure] {path}")
 
 
-# ── Figure 3: AQ-10 Threshold Analysis ───────────────────────────────────
-fig, ax = plt.subplots(figsize=(10, 5.5))
 
-thresh_plot = thresh_df.dropna(subset=["Sensitivity"])
-t_vals = thresh_plot["AQ10_threshold"].values
-
-metric_lines = [
-    ("Sensitivity", "#d62728", "-"),
-    ("Specificity", "#1f77b4", "-"),
-    ("F1",          "#2ca02c", "--"),
-    ("Accuracy",    "#9467bd", "--"),
-]
-for (mk, clr, ls) in metric_lines:
-    vals = thresh_plot[mk].values
-    ax.plot(t_vals, vals, ls=ls, color=clr, lw=2.2, label=f"AQ-10 {mk}")
-
-# Vertical line: clinical rule ≥6
-ax.axvline(6, color="#333333", lw=2.0, ls="--", alpha=0.8, label="Clinical rule (≥6)")
-
-# Horizontal dotted lines: M* performance
-mstar_hlines = [
-    (point_est[best_algo]["Sensitivity"],   "#d62728", f"M* Sensitivity={point_est[best_algo]['Sensitivity']:.3f}"),
-    (point_est[best_algo]["Specificity"],   "#1f77b4", f"M* Specificity={point_est[best_algo]['Specificity']:.3f}"),
-    (point_est[best_algo]["F1_Score"],      "#2ca02c", f"M* F1={point_est[best_algo]['F1_Score']:.3f}"),
-    (point_est[best_algo]["Accuracy"],      "#9467bd", f"M* Accuracy={point_est[best_algo]['Accuracy']:.3f}"),
-]
-for (hval, clr, lbl) in mstar_hlines:
-    ax.axhline(hval, color=clr, lw=1.2, ls=":", alpha=0.6)
-
-ax.set_xlabel("AQ-10 Classification Threshold (score ≥ T)")
-ax.set_ylabel("Metric Value")
-ax.set_title("RQ1 — Figure 3: AQ-10 Threshold Analysis (T = 0 to 10)\n"
-             "Vertical dashed line = clinical rule (≥6). "
-             "Dotted horizontal lines = M* performance at t=0.50.")
-ax.set_xticks(range(0, 11))
-ax.set_xlim(-0.3, 10.3); ax.set_ylim(-0.02, 1.08)
-ax.grid(True, linestyle=":", alpha=0.35)
-
-# Create two-part legend
-from matplotlib.lines import Line2D
-leg1 = ax.legend(loc="upper right", fontsize=8, ncol=2,
-                 title="AQ-10 instrument performance as threshold varies")
-ax.add_artist(leg1)
-custom_leg = [Line2D([0],[0],color=c,lw=1.2,ls=":",
-              label=lbl.split("=")[0]+" M* (dotted)") for _,(c,lbl) in enumerate(
-              [(clr_, lbl_) for clr_,lbl_ in [(hv[1],hv[2]) for hv in mstar_hlines]])]
-# Just add caption text
-fig.text(0.5, -0.04,
-         f"Dotted horizontal lines represent M* ({short_name(best_algo)}) "
-         f"at t=0.50: "
-         f"Sens={point_est[best_algo]['Sensitivity']:.3f}, "
-         f"Spec={point_est[best_algo]['Specificity']:.3f}, "
-         f"F1={point_est[best_algo]['F1_Score']:.3f}, "
-         f"Acc={point_est[best_algo]['Accuracy']:.3f}",
-         ha="center", fontsize=8.5, style="italic", color="#333333")
-save_fig(fig, "F_rq1_3_aq10_threshold_analysis.png")
-print("  F3: AQ-10 threshold analysis (0-10)")
+def reliability_bins(y_true, prob, n_bins=10):
+    """Ten equal-width bins, as in the ECE: bin mean probability, observed share and size."""
+    edges = np.linspace(0, 1, n_bins + 1)
+    b = np.clip(np.digitize(prob, edges[1:-1]), 0, n_bins - 1)
+    keep = [k for k in range(n_bins) if (b == k).any()]
+    return (np.array([prob[b == k].mean() for k in keep]), np.array([y_true[b == k].mean() for k in keep]),
+            np.array([(b == k).sum() for k in keep]))
 
 
-# ── Figure 4: Operating Point Comparison ─────────────────────────────────
-fig, ax = plt.subplots(figsize=(7, 7))
+print("\n[Step 15]  Figures ...")
+SHORT = {"Logistic Regression": "Logistic regression", "Support Vector Machine": "SVM", "Random Forest": "Random forest",
+         "K-Nearest Neighbors": "k-nearest neighbors", "Naive Bayes": "Naive Bayes"}
+LCOL = {"Logistic Regression": "#999999", "Support Vector Machine": "#0072B2", "Random Forest": "#009E73",
+        "K-Nearest Neighbors": "#CC79A7", "Naive Bayes": "#E69F00"}
+C_MODEL, C_RULE, C_TOT = "#0072B2", "#D55E00", "#7F7F7F"
+sel = SHORT[best_algo]
 
-# AQ-10 score ROC — faint background, context only
-fpr_aq, tpr_aq, _ = roc_curve(y_test, aq10_score_test)
-ax.plot(fpr_aq, tpr_aq, "--", color="#cccccc", lw=1.8, alpha=0.65,
-        label=f"AQ-10 total score (0-10) — CONTEXT ONLY  "
-              f"(AUC={aq10_inst_auroc:.3f})")
+# Model selection: mean CV AUROC of every setting, by learner
+with plt.rc_context(FIG_STYLE):
+    fig, ax = plt.subplots(figsize=(3.5, 2.5))
+    fig.subplots_adjust(left=0.16, right=0.98, bottom=0.2, top=0.93)
+    jit = np.random.default_rng(0)                    # jitter only; no effect on any number
+    for i, algo in enumerate(ALGO_ORDER):
+        v = search_df.loc[search_df["Algorithm"] == algo, "Mean_CV_AUROC"].values
+        ax.scatter(i + jit.uniform(-0.2, 0.2, len(v)), v, s=6, color="#9DB9D5", lw=0, zorder=2)
+        best_v = v.max()
+        ax.plot([i - 0.3, i + 0.3], [best_v, best_v], color=C_MODEL if algo == best_algo else "#444444", lw=1.4, zorder=3)
+        ax.text(i, best_v, f" {best_v:.3f}", ha="center", va="bottom", fontsize=6,
+                color=C_MODEL if algo == best_algo else "#444444")
+    ax.set_xticks(range(len(ALGO_ORDER)))
+    ax.set_xticklabels([f"{SHORT[a].replace(' ', chr(10), 1)}\n({int((search_df['Algorithm'] == a).sum())})" for a in ALGO_ORDER],
+                       fontsize=6.3)
+    for tl, algo in zip(ax.get_xticklabels(), ALGO_ORDER):
+        if algo == best_algo:
+            tl.set_color(C_MODEL); tl.set_fontweight("bold")
+    ax.set_ylabel("Mean AUROC in five-fold CV")
+    ax.set_title("Points: settings (number in brackets). Bars: best setting. Blue: selected.", fontsize=6.2, loc="left")
+    save_figure(fig, "rq1_model_selection_cv_auroc.png")
 
-# M* as diamond — single operating point
-fpr_m  = 1 - point_est[best_algo]["Specificity"]
-tpr_m  = point_est[best_algo]["Sensitivity"]
-ax.plot(fpr_m, tpr_m, marker="D", markersize=14, color=clr_mstar,
-        markeredgecolor="white", markeredgewidth=2, linestyle="",
-        label=(f"M* ({best_algo})  t={THRESHOLD}\n"
-               f"Sens={tpr_m:.3f}, Spec={1-fpr_m:.3f}"))
+# Test set: ROC curves of the five learners, and the selected model against the rule
+with plt.rc_context(FIG_STYLE):
+    fig = plt.figure(figsize=(7.16, 2.7))
+    ax_a = fig.add_axes([0.065, 0.16, 0.3, 0.76])
+    ax_b = fig.add_axes([0.5, 0.16, 0.43, 0.7])
+    for algo in ALGO_ORDER:
+        fpr_, tpr_, _ = roc_curve(y_test.values, test_probs[algo])
+        ax_a.plot(fpr_, tpr_, color=LCOL[algo], lw=1.5 if algo == best_algo else 0.9, zorder=3 if algo == best_algo else 2,
+                  label=f"{SHORT[algo]} ({roc_auc_score(y_test.values, test_probs[algo]):.3f})")
+    fpr_, tpr_, _ = roc_curve(y_test.values, aq10_score_test)
+    ax_a.plot(fpr_, tpr_, color=C_TOT, ls=(0, (4, 2)), lw=1.0,
+              label=f"AQ-10 total score ({roc_auc_score(y_test.values, aq10_score_test):.3f})")
+    rp_ = point_est["AQ-10 Clinical Rule"]
+    ax_a.plot(1 - rp_["Specificity"], rp_["Sensitivity"], "s", color=C_RULE, ms=4, zorder=4, label="AQ-10 rule (score \u2265 6)")
+    ax_a.plot([0, 1], [0, 1], ":", color="#BBBBBB", lw=0.6)
+    ax_a.set_xlabel("False-positive rate"); ax_a.set_ylabel("Sensitivity")
+    ax_a.legend(title="Test set (AUROC)", loc="lower right", frameon=False, fontsize=5.8, title_fontsize=6)
+    mets = [("Sensitivity", "Sensitivity"), ("Specificity", "Specificity"), ("PPV", "Precision_PPV"), ("NPV", "NPV"),
+            ("Accuracy", "Accuracy"), ("F1 score", "F1_Score")]
+    lows = []
+    for i, (lab, key) in enumerate(mets):
+        yy = len(mets) - 1 - i
+        for row_, col, mk, off, name in ((mstar_row, C_MODEL, "o", 0.13, f"{sel}, threshold {THRESHOLD:.2f}"),
+                                         (rule_row, C_RULE, "s", -0.13, "AQ-10 rule (score \u2265 6)")):
+            pt = float(row_[f"{key}_Point"])
+            lo = float(row_[f"{key}_95CI_Lo"]) if pd.notna(row_[f"{key}_95CI_Lo"]) else pt
+            hi = float(row_[f"{key}_95CI_Hi"]) if pd.notna(row_[f"{key}_95CI_Hi"]) else pt
+            lows.append(lo)
+            ax_b.errorbar(pt, yy + off, xerr=[[max(pt - lo, 0)], [max(hi - pt, 0)]], fmt=mk, color=col, ms=3.5,
+                          elinewidth=0.9, capsize=1.5, label=name if i == 0 else None)
+            ax_b.text(1.012, yy + off, f"{pt:.3f}", transform=ax_b.get_yaxis_transform(), va="center", fontsize=6, color=col)
+    ax_b.set_yticks(range(len(mets))); ax_b.set_yticklabels([m[0] for m in mets][::-1])
+    ax_b.set_xlim(max(0.0, min(lows) - 0.05), 1.0); ax_b.set_ylim(-0.6, len(mets) - 0.4)
+    ax_b.set_xlabel(f"Test set, {len(y_test)} children (95% bootstrap interval, 2,000 stratified resamples)")
+    ax_b.legend(loc="lower right", bbox_to_anchor=(1.0, 1.0), ncol=2, frameon=False, fontsize=6.3)
+    for ax_, letter, dx, yy_ in ((ax_a, "(a)", -0.2, 1.02), (ax_b, "(b)", -0.17, 1.1)):
+        ax_.text(dx, yy_, letter, transform=ax_.transAxes, fontsize=8, fontweight="bold", va="bottom")
+    save_figure(fig, "rq1_test_set_roc_and_svm_vs_rule.png")
 
-# AQ-10 RULE as X — single operating point
-fpr_r  = 1 - point_est["AQ-10 Clinical Rule"]["Specificity"]
-tpr_r  = point_est["AQ-10 Clinical Rule"]["Sensitivity"]
-ax.plot(fpr_r, tpr_r, marker="X", markersize=16, color="#d62728",
-        markeredgecolor="white", markeredgewidth=2, linestyle="",
-        label=(f"AQ-10 Rule (score ≥6)\n"
-               f"Sens={tpr_r:.3f}, Spec={1-fpr_r:.3f}"))
-
-# Chance line
-ax.plot([0,1],[0,1],":", color="gray", alpha=0.5, lw=1.2)
-
-# Annotate points
-ax.annotate(f"M*\nSens={tpr_m:.3f}\nSpec={1-fpr_m:.3f}",
-            xy=(fpr_m, tpr_m), xytext=(fpr_m+0.07, tpr_m-0.10),
-            arrowprops=dict(arrowstyle="->", color=clr_mstar),
-            fontsize=8.5, color=clr_mstar)
-ax.annotate(f"AQ-10 ≥6\nSens={tpr_r:.3f}\nSpec={1-fpr_r:.3f}",
-            xy=(fpr_r, tpr_r), xytext=(fpr_r+0.07, tpr_r+0.08),
-            arrowprops=dict(arrowstyle="->", color="#d62728"),
-            fontsize=8.5, color="#d62728")
-
-ax.set_xlabel("1 − Specificity  (False Positive Rate)")
-ax.set_ylabel("Sensitivity  (True Positive Rate)")
-ax.set_title("RQ1 — Figure 4: Operating Point Comparison\n"
-             "M* and AQ-10 Rule are BINARY classifiers at FIXED thresholds\n"
-             "(Faint curve = instrument context, not the rule's ROC)")
-ax.legend(loc="lower right", fontsize=8.5)
-ax.set_xlim(-0.03, 1.03); ax.set_ylim(-0.03, 1.03)
-ax.grid(True, linestyle=":", alpha=0.35)
-save_fig(fig, "F_rq1_4_operating_point_comparison.png")
-print("  F4: Operating point comparison (M* and Rule as fixed points in ROC space)")
-
-
-# ── Figure 5: M* Calibration Curve ───────────────────────────────────────
-fig, ax = plt.subplots(figsize=(7, 6))
-ax.plot([0,1],[0,1],"k:", lw=1.5, alpha=0.7, label="Perfect calibration")
-cx_m, cy_m = reliability_curve(y_test.values, test_probs[best_algo], n_bins=10)
-ax.plot(cx_m, cy_m, "o-", color=clr_mstar, lw=2.2, ms=7,
-        label=(f"M* ({best_algo})\n"
-               f"Brier={mstar_brier:.4f} {fmt_ci(mstar_brier,brier_lo,brier_hi)}\n"
-               f"ECE={mstar_ece:.4f} {fmt_ci(mstar_ece,ece_lo,ece_hi)}"))
-ax.set_xlabel("Mean predicted probability"); ax.set_ylabel("Observed fraction positive")
-ax.set_title("RQ1 — Figure 5: M* Calibration (Reliability Diagram)\n"
-             "M* probability only — AQ-10 rule has no probability output")
-ax.legend(fontsize=9, loc="upper left")
-ax.set_xlim(-0.02, 1.02); ax.set_ylim(-0.05, 1.10)
-ax.grid(True, linestyle=":", alpha=0.4)
-save_fig(fig, "F_rq1_5_mstar_calibration.png")
-print("  F5: M* calibration curve (Brier + ECE)")
-
-
-# ── Figure 6: Decision Curve Analysis ────────────────────────────────────
-fig, ax = plt.subplots(figsize=(9, 6))
-ax.plot(dca_df["Threshold"], dca_df["NB_Mstar"],
-        lw=2.5, color=clr_mstar, label=f"M* ({best_algo})")
-ax.plot(dca_df["Threshold"], dca_df["NB_AQ10_calibrated"],
-        "--", lw=2.2, color="#555555",
-        label="AQ-10 calibrated probability")
-ax.plot(dca_df["Threshold"], dca_df["NB_TreatAll"],
-        ":", lw=1.8, color="steelblue", label="Treat All")
-ax.plot(dca_df["Threshold"], dca_df["NB_TreatNone"],
-        "-", lw=1.3, color="lightgray", label="Treat None")
-ax.axvspan(0.10, 0.50, color="green", alpha=0.06, label="Clinical window (0.10–0.50)")
-ax.axvline(0.50, color="gray", lw=1.0, ls=":", alpha=0.5)
-ax.set_xlim(0,1)
-nb_max = float(dca_df[["NB_Mstar","NB_AQ10_calibrated","NB_TreatAll"]].max().max())
-ax.set_ylim(-0.06, max(0.25, nb_max+0.05))
-ax.set_xlabel("Threshold probability (pt)"); ax.set_ylabel("Net Benefit")
-ax.set_title("RQ1 — Figure 6: Decision-curve analysis on the held-out test set")
-ax.legend(fontsize=9, loc="upper right")
-ax.grid(True, linestyle=":", alpha=0.4)
-fig.text(
-    0.5, -0.06,
-    "Net benefit was evaluated on the independent test set across threshold probabilities. "
-    "The M* curve represents model-predicted probabilities. "
-    "Because the conventional AQ-10 \u22656 rule provides a fixed binary decision rather than "
-    "a continuous probability, AQ-10 total scores were transformed into predicted probabilities "
-    "using a calibration model fitted on the training data and applied unchanged to the test set. "
-    "The shaded region denotes the pre-specified screening-threshold range of 0.10\u20130.50.",
-    ha="center", va="top", fontsize=8, style="italic", color="#333333",
-    wrap=True,
-)
-save_fig(fig, "F_rq1_6_decision_curve_analysis.png")
-print("  F6: Decision Curve Analysis")
-
-
-# ── Figure 7: McNemar Disagreement ───────────────────────────────────────
-fig, axes7 = plt.subplots(1, 2, figsize=(12, 5))
-
-# Left: stacked bar of all four agreement patterns
-ax7l = axes7[0]
-patt_lbls = ["Both flag\n(agree +)", f"M* flags\nRule misses\n(b={b_mc})",
-             f"Rule flags\nM* misses\n(c={c_mc})", "Both miss\n(agree −)"]
-patt_vals = [agree_pp, b_mc, c_mc, agree_nn]
-patt_clrs = ["#2ca02c", clr_mstar, "#d62728", "#aaaaaa"]
-bars7 = ax7l.bar(patt_lbls, patt_vals, color=patt_clrs, alpha=0.82,
-                 edgecolor="white", lw=1.5)
-for bar7 in bars7:
-    h7 = bar7.get_height()
-    ax7l.text(bar7.get_x()+bar7.get_width()/2, h7+0.3,
-              f"{h7}\n({100*h7/total_test:.1f}%)",
-              ha="center", va="bottom", fontsize=10)
-ax7l.set_ylabel("Number of participants")
-ax7l.set_title(f"Prediction Agreement  (N={total_test})\n"
-               f"M* ({short_name(best_algo)}) vs AQ-10 Rule (≥6)")
-ax7l.grid(True, axis="y", linestyle=":", alpha=0.4)
-ax7l.set_ylim(0, max(patt_vals)*1.25)
-
-# Right: pie of discordant pairs only
-ax7r = axes7[1]
-sig_str = "SIGNIFICANT" if sig_mcnemar else "not significant"
-if n_disc > 0:
-    wedge = {"linewidth":1.5,"edgecolor":"white"}
-    ax7r.pie([b_mc, c_mc],
-             labels=[f"M* flags, Rule misses\nb = {b_mc}",
-                     f"Rule flags, M* misses\nc = {c_mc}"],
-             colors=[clr_mstar,"#d62728"],
-             autopct="%1.1f%%", startangle=90,
-             wedgeprops=wedge, textprops={"fontsize":9})
-    ax7r.set_title(f"Discordant Pairs  (n={n_disc})\n"
-                   f"McNemar χ²={chi2_mc:.3f}, p={p_mc:.4f}  [{sig_str}]")
-else:
-    ax7r.text(0.5,0.5,"No discordant pairs\n(perfect agreement)",
-              ha="center",va="center",fontsize=12,transform=ax7r.transAxes)
-    ax7r.axis("off")
-
-fig.suptitle("RQ1 — Figure 7: McNemar Test — Paired Decision Patterns\n"
-             f"M* vs AQ-10 Clinical Rule  |  α=0.05  |  {sig_str}",
-             fontsize=12, y=1.02)
-fig.tight_layout()
-save_fig(fig, "F_rq1_7_mcnemar_disagreement.png")
-print("  F7: McNemar disagreement visualisation")
-
-
-# ── Figure 8: CV HP Search Distribution ──────────────────────────────────
-fig, ax = plt.subplots(figsize=(10, 5))
-sns.boxplot(data=search_df, x="Algorithm", y="Mean_CV_AUROC",
-            order=ALGO_ORDER, ax=ax,
-            palette=[COLORS[a] for a in ALGO_ORDER])
-ax.set_xticklabels(
-    [f"{a}{' [M*]' if a==best_algo else ''}" for a in ALGO_ORDER],
-    rotation=15, ha="right")
-ax.set_title("RQ1 — Figure 8: CV AUROC Distribution Across Hyperparameter Configs")
-ax.set_ylabel("Mean CV AUROC"); ax.grid(True, axis="y", linestyle=":", alpha=0.4)
-save_fig(fig, "F_rq1_8_cv_search_distribution.png")
-print("  F8: CV HP search distribution")
-
-print(f"\n  All 8 figures saved → {DIRS['figures']}")
+# Test set: calibration of the selected model, and net benefit
+with plt.rc_context(FIG_STYLE):
+    fig, (ax_a, ax_b) = plt.subplots(1, 2, figsize=(7.16, 2.6))
+    fig.subplots_adjust(left=0.075, right=0.98, bottom=0.17, top=0.9, wspace=0.28)
+    mp, ob, nb_ = reliability_bins(y_test.values, test_probs[best_algo])
+    ax_a.plot([0, 1], [0, 1], ":", color="#999999", lw=0.7)
+    ax_a.plot(mp, ob, color=C_MODEL, lw=0.8)
+    ax_a.scatter(mp, ob, s=6 + 40 * nb_ / nb_.max(), color=C_MODEL, zorder=3)
+    ax_a.text(0.04, 0.96, f"{sel}\nBrier {mstar_brier:.3f}\nECE {mstar_ece:.3f}", transform=ax_a.transAxes, va="top", fontsize=6.5)
+    ax_a.set_xlabel("Predicted probability (mean of ten equal bins; point size = children)")
+    ax_a.set_ylabel("Observed share of ASD-school children")
+    ax_a.set_xlim(-0.02, 1.02); ax_a.set_ylim(-0.02, 1.02)
+    d_ = dca_df[dca_df["Threshold"] <= 0.8]
+    ax_b.axvspan(0.10, 0.50, color="#EEEEEE", lw=0, label="Thresholds 0.10 to 0.50")
+    ax_b.plot(d_["Threshold"], d_["NB_Mstar"], color=C_MODEL, lw=1.2, label=sel)
+    ax_b.plot(d_["Threshold"], d_["NB_AQ10_calibrated"], color=C_RULE, lw=1.0, ls=(0, (4, 2)),
+              label="AQ-10 total score (logistic calibration)")
+    ax_b.plot(d_["Threshold"], d_["NB_TreatAll"], color="#777777", lw=0.8, ls=":", label="Refer all")
+    ax_b.axhline(0, color="#222222", lw=0.6, label="Refer none")
+    top_ = float(np.nanmax(d_[["NB_Mstar", "NB_AQ10_calibrated", "NB_TreatAll"]].values))
+    ax_b.set_ylim(-0.05, top_ + 0.05); ax_b.set_xlim(0, 0.8)
+    ax_b.set_xlabel("Threshold probability"); ax_b.set_ylabel("Net benefit")
+    ax_b.legend(loc="lower left", bbox_to_anchor=(0.0, 0.06), frameon=False, fontsize=6)
+    for ax_, letter in ((ax_a, "(a)"), (ax_b, "(b)")):
+        ax_.text(-0.17, 1.02, letter, transform=ax_.transAxes, fontsize=8, fontweight="bold", va="bottom")
+    save_figure(fig, "rq1_test_set_calibration_and_net_benefit.png")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1385,16 +1173,7 @@ master_summary = {
         "results": json_safe(sec_df.to_dict(orient="records")),
     },
 
-    "figures": [f"F_rq1_{i}.png" for i in [
-        "1_confusion_matrices",
-        "2_forest_plot_binary_metrics",
-        "3_aq10_threshold_analysis",
-        "4_operating_point_comparison",
-        "5_mstar_calibration",
-        "6_decision_curve_analysis",
-        "7_mcnemar_disagreement",
-        "8_cv_search_distribution",
-    ]],
+    "figures": FIGURES_SAVED,
 
     "tables": [
         "T_rq1_hyperparameter_search_log.csv",
@@ -1487,8 +1266,8 @@ print(f"""
 """)
 
 print(f"  OUTPUTS:")
-print(f"    Figures     : {DIRS['figures']}")
 print(f"    Tables      : {DIRS['tables']}")
+print(f"    Figures     : {FIG_DIR}")
 print(f"    Paper-ready : {DIRS['paper_ready']}")
 print(f"    Models      : {DIRS['models']}")
 print("\n" + "=" * 78)

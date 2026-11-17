@@ -1,5 +1,11 @@
+"""RQ2 - Leave-one-school-out validation of the locked SVM.
 
-
+Run after rq1_baseline.py. Refits the locked SVM twelve times, each time with one school left
+out, and compares the pooled out-of-fold decisions with the AQ-10 rule. Writes tables and the
+out-of-fold predictions to <work>/aq_10/rq2_loso/, and three figures to <work>/aq_10/figures/:
+the AQ-10 total score by group with the share flagged by the SVM at each score, the pooled ROC
+curves with calibration, and the SVM probability of every child by left-out school.
+"""
 import os, json, time, random, warnings
 from datetime import datetime
 
@@ -10,21 +16,22 @@ warnings.filterwarnings("ignore")
 
 import numpy as np
 import pandas as pd
+import matplotlib
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-import matplotlib.patches as mpatches
-import seaborn as sns
+from matplotlib.lines import Line2D
+from matplotlib.patches import Patch
 from scipy.stats import chi2 as chi2_dist
 
 np.random.seed(SEED)
 
-# from google.colab import drive  # Colab-only; locally, set the AQ10_BASE environment variable instead
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVC
 from sklearn.metrics import (
     roc_auc_score, roc_curve, average_precision_score,
     accuracy_score, precision_score, recall_score, f1_score,
-    brier_score_loss, confusion_matrix, ConfusionMatrixDisplay,
+    brier_score_loss, confusion_matrix,
 )
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -36,9 +43,7 @@ print("RQ2 — LOSO INSTITUTIONAL GENERALIZATION  |  MONO-CLASS SCHOOLS")
 print("FINAL-MONO-10.1-RQ2")
 print("=" * 78)
 
-# drive.mount("/content/drive", force_remount=True)
-
-BASE    = os.environ.get("AQ10_BASE", "/content/drive/MyDrive/Autism")
+BASE    = os.environ.get("AQ10_BASE", os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "work"))
 PROJECT = os.path.join(BASE, "aq_10")
 
 RQ1_MODELS_DIR = os.path.join(PROJECT, "rq1_baseline", "models")
@@ -50,13 +55,12 @@ RQ2_ROOT = os.path.join(PROJECT, "rq2_loso")
 DIRS = {
     "root": RQ2_ROOT, "tables": os.path.join(RQ2_ROOT, "tables"),
     "paper_ready": os.path.join(RQ2_ROOT, "tables", "paper_ready"),
-    "figures": os.path.join(RQ2_ROOT, "figures"),
     "results": os.path.join(RQ2_ROOT, "results"),
     "predictions": os.path.join(RQ2_ROOT, "predictions"),
     "logs": os.path.join(RQ2_ROOT, "logs"),
     "config": os.path.join(RQ2_ROOT, "config"),
     "paper_tables": os.path.join(PROJECT, "paper_results", "rq2", "tables"),
-    "paper_figures": os.path.join(PROJECT, "paper_results", "rq2", "figures"),
+    "figures": os.path.join(PROJECT, "figures"),
 }
 for d in DIRS.values():
     os.makedirs(d, exist_ok=True)
@@ -203,23 +207,6 @@ def save_tbl(df, name):
 def save_pr(df, name):
     for d in [DIRS["paper_ready"], DIRS["paper_tables"]]:
         df.to_csv(os.path.join(d, name), index=False)
-
-def save_fig(fig, name):
-    for d in [DIRS["figures"], DIRS["paper_figures"]]:
-        fig.savefig(os.path.join(d, name), dpi=300, bbox_inches="tight")
-    plt.close(fig)
-
-def reliability_curve(y_true, y_prob, n_bins=10):
-    y_true = np.asarray(y_true); y_prob = np.asarray(y_prob)
-    bins = np.linspace(0, 1, n_bins+1)
-    cx, cy = [], []
-    for i in range(n_bins):
-        lo, hi = bins[i], bins[i+1]
-        mask = (y_prob >= lo) & ((y_prob <= hi) if i==n_bins-1 else (y_prob < hi))
-        if mask.sum() == 0: continue
-        cx.append(float(y_prob[mask].mean()))
-        cy.append(float(y_true[mask].mean()))
-    return np.array(cx), np.array(cy)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 2. LOCK VERIFICATION
@@ -558,157 +545,125 @@ print(f"    Columns: {save_cols}")
 # 11. FIGURES
 # ══════════════════════════════════════════════════════════════════════════════
 
-print("\n[Step 10] Generating figures...")
+import logging
+logging.getLogger("matplotlib.font_manager").setLevel(logging.ERROR)   # Arial is often missing on Linux; no warning flood
+FIG_STYLE = {"font.family": "sans-serif", "font.sans-serif": ["Arial", "Liberation Sans", "DejaVu Sans"],
+             "font.size": 7, "axes.linewidth": 0.6, "xtick.major.width": 0.6, "ytick.major.width": 0.6,
+             "xtick.major.size": 2.5, "ytick.major.size": 2.5, "axes.spines.top": False, "axes.spines.right": False}
+FIG_DIR = DIRS["figures"]
+os.makedirs(FIG_DIR, exist_ok=True)
+FIGURES_SAVED = []
 
-plt.rcParams.update({
-    "font.size": 11, "axes.titlesize": 13, "axes.labelsize": 11,
-    "axes.spines.top": False, "axes.spines.right": False,
-})
 
-COLOR_SVM = "#ff7f0e"
-COLOR_RULE = "#333333"
-COLOR_ASD_SCHOOL = "#d62728"
-COLOR_NORM_SCHOOL = "#1f77b4"
+def save_figure(fig, name):
+    """Save a figure at 600 dpi in <work>/aq_10/figures/ and close it."""
+    path = os.path.join(FIG_DIR, name)
+    fig.savefig(path, dpi=600)
+    plt.close(fig)
+    FIGURES_SAVED.append(name)
+    print(f"  [figure] {path}")
 
-# ── Figure 1: Pooled ROC (SVM only) ─────────────────────────────────────────
-fig, ax = plt.subplots(figsize=(8, 6))
-fpr_svm, tpr_svm, _ = roc_curve(y_all, prob_svm)
-ax.plot(fpr_svm, tpr_svm, lw=2.5, color=COLOR_SVM,
-        label=f"SVM-LOSO  AUC = {pooled_svm['AUROC']:.4f}")
 
-# Faint context: AQ-10 total score (NOT the rule)
-fpr_aq, tpr_aq, _ = roc_curve(y_all, oof_full[aq_score_col].values)
-auc_aq = roc_auc_score(y_all, oof_full[aq_score_col].values)
-ax.plot(fpr_aq, tpr_aq, "--", lw=1.5, color="#bbbbbb", alpha=0.7,
-        label=f"AQ-10 total score (context)  AUC = {auc_aq:.4f}")
 
-# Operating point marker
-ax.scatter(1 - pooled_svm["Specificity"], pooled_svm["Sensitivity"],
-           marker="D", s=100, color=COLOR_SVM, zorder=5, edgecolor="white",
-           label=f"SVM @ t=0.50  (Sens={pooled_svm['Sensitivity']:.3f}, "
-                 f"Spec={pooled_svm['Specificity']:.3f})")
+def reliability_bins(y_true, prob, n_bins=10):
+    """Ten equal-width bins, as in the ECE: bin mean probability, observed share and size."""
+    edges = np.linspace(0, 1, n_bins + 1)
+    b = np.clip(np.digitize(prob, edges[1:-1]), 0, n_bins - 1)
+    keep = [k for k in range(n_bins) if (b == k).any()]
+    return (np.array([prob[b == k].mean() for k in keep]), np.array([y_true[b == k].mean() for k in keep]),
+            np.array([(b == k).sum() for k in keep]))
 
-ax.plot([0, 1], [0, 1], ":", color="gray", alpha=0.5)
-ax.set_xlabel("1 - Specificity (FPR)")
-ax.set_ylabel("Sensitivity (TPR)")
-ax.set_title("RQ2 — Pooled OOF ROC (LOSO, S0)\n"
-             "AQ-10 total score shown for context only")
-ax.legend(loc="lower right", fontsize=9)
-ax.grid(True, linestyle=":", alpha=0.4)
-save_fig(fig, "F_rq2_1_pooled_roc.png")
-print("  ✓ F1: Pooled ROC")
 
-# ── Figure 2: Per-School Partial Metrics ────────────────────────────────────
-fig, ax = plt.subplots(figsize=(max(10, N_SCHOOLS*0.8), 5))
+print("\n[Step 10] Figures...")
+MIN_N_PER_SCORE = 5                    # scores held by fewer children of a group are not plotted in panel (b)
+score_f2 = oof_full[aq_score_col].values.astype(int)
+lab_f2, svm_f2 = oof_full["label"].values, oof_full["y_pred"].values
+S_f2 = np.arange(11)
+ASD_C, MN_C, RULE_C, INK = "#CC79A7", "#56B4E9", "#D55E00", "#333333"
+with plt.rc_context(FIG_STYLE):
+    fig, (ax_a, ax_b) = plt.subplots(1, 2, figsize=(3.5, 2.0))
+    fig.subplots_adjust(left=0.105, right=0.985, bottom=0.185, top=0.8, wspace=0.42)
+    # (a) distribution of the total score in each group
+    top_a = 0.0
+    for k, (g, c, name) in enumerate(((1, ASD_C, "ASD schools"), (0, MN_C, "Mainstream"))):
+        pct = np.array([100 * np.mean(score_f2[lab_f2 == g] == s) for s in S_f2])
+        ax_a.bar(S_f2 + (k - 0.5) * 0.4, pct, 0.4, color=c, label=name, lw=0)
+        top_a = max(top_a, pct.max())
+    top_a = max(40.0, 5 * np.ceil(1.05 * top_a / 5))
+    ax_a.axvline(5.5, color=INK, ls="--", lw=0.7)
+    ax_a.text(5.65, 0.95 * top_a, "cut-off", fontsize=6, color=INK, va="top")
+    ax_a.set_xlabel("AQ-10 total score"); ax_a.set_ylabel("Children in group (%)")
+    ax_a.set_xticks(S_f2[::2]); ax_a.set_xlim(-0.6, 10.6); ax_a.set_ylim(0, top_a)
+    # (b) flagged by the SVM when the school was unseen, at each total score
+    for g, c, mk, name in ((1, ASD_C, "o", "SVM, ASD schools"), (0, MN_C, "s", "SVM, mainstream")):
+        n_s = np.array([np.sum((lab_f2 == g) & (score_f2 == s)) for s in S_f2])
+        f_s = np.array([svm_f2[(lab_f2 == g) & (score_f2 == s)].sum() for s in S_f2])
+        keep = n_s >= MIN_N_PER_SCORE
+        ax_b.plot(S_f2[keep], 100 * f_s[keep] / n_s[keep], marker=mk, ms=3, color=c, lw=1.1, label=name)
+    ax_b.step(S_f2, 100 * (S_f2 >= 6), where="mid", color=RULE_C, ls="--", lw=0.9, label="AQ-10 rule")
+    ax_b.set_xlabel("AQ-10 total score"); ax_b.set_ylabel("Flagged by the SVM (%)")
+    ax_b.set_xticks(S_f2[::2]); ax_b.set_xlim(-0.4, 10.4); ax_b.set_ylim(-3, 103)
+    for ax_, letter in ((ax_a, "(a)"), (ax_b, "(b)")):
+        ax_.text(-0.3, 1.06, letter, transform=ax_.transAxes, fontsize=8, fontweight="bold", va="bottom")
+    fig.legend(handles=[Patch(color=ASD_C, label="ASD schools"), Patch(color=MN_C, label="Mainstream schools"),
+                        Line2D([], [], color=RULE_C, ls="--", lw=0.9, label="AQ-10 rule")],
+               loc="upper center", ncol=3, frameon=False, fontsize=6.5, handlelength=1.4, columnspacing=1.4,
+               bbox_to_anchor=(0.53, 1.0))
+    save_figure(fig, "rq2_aq10_score_and_svm_flags.png")
 
-x = np.arange(N_SCHOOLS)
-bar_w = 0.5
-colors = [COLOR_ASD_SCHOOL if t=="ASD" else COLOR_NORM_SCHOOL
-          for t in school_df["school_type"]]
+# Pooled ROC curves of the SVM and the AQ-10 total score, and calibration of the SVM
+prob_f2 = oof_full["y_prob"].values
+with plt.rc_context(FIG_STYLE):
+    fig, (ax_a, ax_b) = plt.subplots(1, 2, figsize=(7.16, 2.7))
+    fig.subplots_adjust(left=0.075, right=0.98, bottom=0.17, top=0.9, wspace=0.28)
+    for sc, col, ls, name in ((prob_f2, "#0072B2", "-", "SVM"), (score_f2, "#7F7F7F", (0, (4, 2)), "AQ-10 total score")):
+        fpr_, tpr_, _ = roc_curve(lab_f2, sc)
+        ax_a.plot(fpr_, tpr_, color=col, ls=ls, lw=1.2, label=f"{name} (AUROC {roc_auc_score(lab_f2, sc):.3f})")
+    ax_a.plot(1 - pooled_svm["Specificity"], pooled_svm["Sensitivity"], "o", color="#0072B2", ms=4, label="SVM, threshold 0.50")
+    r6_ = score_f2 >= 6
+    ax_a.plot(r6_[lab_f2 == 0].mean(), r6_[lab_f2 == 1].mean(), "s", color=RULE_C, ms=4, label="AQ-10 rule (score \u2265 6)")
+    ax_a.plot([0, 1], [0, 1], ":", color="#BBBBBB", lw=0.6)
+    ax_a.set_xlabel("False-positive rate"); ax_a.set_ylabel("Sensitivity")
+    ax_a.legend(title=f"{N_TOTAL} children, school left out", loc="lower right", frameon=False, fontsize=6.2, title_fontsize=6.2)
+    mp, ob, nb_ = reliability_bins(lab_f2, prob_f2)
+    ax_b.plot([0, 1], [0, 1], ":", color="#999999", lw=0.7)
+    ax_b.plot(mp, ob, color="#0072B2", lw=0.8)
+    ax_b.scatter(mp, ob, s=6 + 40 * nb_ / nb_.max(), color="#0072B2", zorder=3)
+    ax_b.text(0.04, 0.96, f"SVM\nBrier {pooled_svm['Brier']:.3f}\nECE {pooled_svm['ECE']:.3f}", transform=ax_b.transAxes,
+              va="top", fontsize=6.5)
+    ax_b.set_xlabel("Predicted probability (mean of ten equal bins; point size = children)")
+    ax_b.set_ylabel("Observed share of ASD-school children")
+    ax_b.set_xlim(-0.02, 1.02); ax_b.set_ylim(-0.02, 1.02)
+    for ax_, letter in ((ax_a, "(a)"), (ax_b, "(b)")):
+        ax_.text(-0.17, 1.02, letter, transform=ax_.transAxes, fontsize=8, fontweight="bold", va="bottom")
+    save_figure(fig, "rq2_pooled_roc_and_calibration.png")
 
-heights = []
-labels = []
-for _, r in school_df.iterrows():
-    if r["school_type"] == "ASD":
-        heights.append(r["Sensitivity"] if not pd.isna(r["Sensitivity"]) else 0)
-        labels.append("Sens")
-    else:
-        heights.append(r["Specificity"] if not pd.isna(r["Specificity"]) else 0)
-        labels.append("Spec")
+# SVM probability of every child, by left-out school
+asd_f2 = sorted(oof_full.loc[oof_full["label"] == 1, "school_id"].unique())
+mn_f2 = sorted(oof_full.loc[oof_full["label"] == 0, "school_id"].unique())
+order_f2 = asd_f2 + mn_f2
+with plt.rc_context(FIG_STYLE):
+    fig, ax = plt.subplots(figsize=(7.16, 2.4))
+    fig.subplots_adjust(left=0.07, right=0.99, bottom=0.17, top=0.78)
+    jit = np.random.default_rng(2)                    # jitter only; no effect on any number
+    for i, s in enumerate(order_f2):
+        v = oof_full.loc[oof_full["school_id"] == s, "y_prob"].values
+        ax.scatter(i + jit.uniform(-0.27, 0.27, len(v)), v, s=2.5, lw=0, alpha=0.65,
+                   color=ASD_C if s in asd_f2 else MN_C)
+        ax.plot([i - 0.32, i + 0.32], [np.median(v)] * 2, color="#222222", lw=1.2)
+        ax.text(i, 1.06, f"{int((v >= THRESHOLD).sum())} / {len(v)}", ha="center", va="bottom", fontsize=6)
+    ax.axhline(THRESHOLD, color=RULE_C, ls="--", lw=0.7)
+    ax.axvline(len(asd_f2) - 0.5, color="#999999", ls=":", lw=0.8)
+    ax.set_xticks(range(len(order_f2))); ax.set_xticklabels([f"S{s[-2:]}" for s in order_f2])
+    ax.set_xlim(-0.6, len(order_f2) - 0.4); ax.set_ylim(-0.03, 1.03)
+    ax.set_ylabel("SVM probability (school left out)")
+    ax.text((len(asd_f2) - 1) / 2, 1.17, "ASD schools", ha="center", fontsize=7, transform=ax.get_xaxis_transform())
+    ax.text(len(asd_f2) + (len(mn_f2) - 1) / 2, 1.17, "Mainstream schools", ha="center", fontsize=7,
+            transform=ax.get_xaxis_transform())
+    fig.text(0.99, 0.01, "Above each school: children flagged / children. Black bar: median. Dashed line: threshold 0.50.",
+             ha="right", va="bottom", fontsize=6, color="#555555")
+    save_figure(fig, "rq2_svm_probability_by_school.png")
 
-bars = ax.bar(x, heights, bar_w, color=colors, alpha=0.85, edgecolor="white")
-
-for bar, h, lbl in zip(bars, heights, labels):
-    ax.text(bar.get_x() + bar.get_width()/2, h + 0.02,
-            f"{h:.2f}\n({lbl})", ha="center", va="bottom", fontsize=8)
-
-ax.axhline(pooled_svm["Sensitivity"], color=COLOR_ASD_SCHOOL, ls="--", lw=1.5,
-           alpha=0.6, label=f"Global Sensitivity = {pooled_svm['Sensitivity']:.3f}")
-ax.axhline(pooled_svm["Specificity"], color=COLOR_NORM_SCHOOL, ls="--", lw=1.5,
-           alpha=0.6, label=f"Global Specificity = {pooled_svm['Specificity']:.3f}")
-
-ax.set_xticks(x)
-ax.set_xticklabels(school_df["school_id"], rotation=45, ha="right", fontsize=9)
-ax.set_ylim(0, 1.15)
-ax.set_ylabel("Metric value")
-ax.set_title("RQ2 — Per-School Partial Metrics (Mono-Class Schools)\n"
-             "ASD schools: Sensitivity  |  Normal schools: Specificity")
-legend_handles = [
-    mpatches.Patch(color=COLOR_ASD_SCHOOL, label="ASD school (Sensitivity)"),
-    mpatches.Patch(color=COLOR_NORM_SCHOOL, label="Normal school (Specificity)"),
-]
-ax.legend(handles=legend_handles, loc="lower right", fontsize=9)
-ax.grid(True, axis="y", linestyle=":", alpha=0.4)
-save_fig(fig, "F_rq2_2_per_school_partial_metrics.png")
-print("  ✓ F2: Per-school partial metrics")
-
-# ── Figure 3: Pooled Confusion Matrices ─────────────────────────────────────
-fig, axes = plt.subplots(1, 2, figsize=(10, 4))
-for ax_, prds, title in [
-    (axes[0], pred_svm, f"SVM-LOSO (S0)\nAUROC={pooled_svm['AUROC']:.4f}"),
-    (axes[1], pred_rule, f"AQ-10 Clinical Rule\nscore ≥ 6"),
-]:
-    cm = confusion_matrix(y_all, prds, labels=[0, 1])
-    ConfusionMatrixDisplay(cm, display_labels=["Normal", "ASD"]).plot(
-        ax=ax_, colorbar=False, cmap="Blues")
-    ax_.set_title(title, fontsize=11)
-fig.suptitle(f"RQ2 — Pooled OOF Confusion Matrices  (N={N_TOTAL})", y=1.04)
-fig.tight_layout()
-save_fig(fig, "F_rq2_3_pooled_confusion.png")
-print("  ✓ F3: Pooled confusion matrices")
-
-# ── Figure 4: Calibration (SVM only) ────────────────────────────────────────
-fig, ax = plt.subplots(figsize=(7, 6))
-ax.plot([0, 1], [0, 1], "k:", alpha=0.6, label="Perfect calibration")
-cx, cy = reliability_curve(y_all, prob_svm)
-ax.plot(cx, cy, "o-", color=COLOR_SVM, lw=2, ms=6,
-        label=f"SVM-LOSO  ECE={pooled_svm['ECE']:.4f}, Brier={pooled_svm['Brier']:.4f}")
-ax.set_xlabel("Mean predicted probability")
-ax.set_ylabel("Observed fraction positive (ASD)")
-ax.set_title(f"RQ2 — Calibration (Pooled OOF, N={N_TOTAL})")
-ax.legend(loc="upper left")
-ax.grid(True, linestyle=":", alpha=0.4)
-save_fig(fig, "F_rq2_4_calibration.png")
-print("  ✓ F4: Calibration")
-
-# ── Figure 5: McNemar Disagreement ──────────────────────────────────────────
-fig, axes5 = plt.subplots(1, 2, figsize=(12, 5))
-
-ax5l = axes5[0]
-patterns = ["Both flag\n(agree +)", "SVM flags\nRule misses",
-            "Rule flags\nSVM misses", "Both miss\n(agree -)"]
-vals = [agree_pp, b_mc, c_mc, agree_nn]
-clrs = ["#2ca02c", COLOR_SVM, "#d62728", "#aaaaaa"]
-bars5 = ax5l.bar(patterns, vals, color=clrs, alpha=0.85, edgecolor="white")
-for b5 in bars5:
-    h = b5.get_height()
-    ax5l.text(b5.get_x() + b5.get_width()/2, h + 0.3,
-              f"{h}\n({100*h/len(y_all):.1f}%)", ha="center", va="bottom", fontsize=9)
-ax5l.set_ylabel("Number of participants")
-ax5l.set_title(f"Prediction Agreement  (N={len(y_all)})")
-ax5l.grid(True, axis="y", linestyle=":", alpha=0.4)
-
-ax5r = axes5[1]
-if n_disc > 0:
-    disc_vals = [b_mc, c_mc]
-    disc_lbls = [f"SVM flags, Rule misses\n(b={b_mc})",
-                 f"Rule flags, SVM misses\n(c={c_mc})"]
-    ax5r.pie(disc_vals, labels=disc_lbls, colors=[COLOR_SVM, "#d62728"],
-             autopct="%1.1f%%", startangle=90,
-             wedgeprops={"linewidth": 1.5, "edgecolor": "white"})
-    sig_txt = "SIGNIFICANT" if sig_mcnemar else "not significant"
-    ax5r.set_title(f"McNemar Discordant Pairs  (n={n_disc})\n"
-                   f"χ²={chi2_mc:.3f}, p={p_mc:.4f}  [{sig_txt}]")
-else:
-    ax5r.text(0.5, 0.5, "No discordant pairs", ha="center", va="center",
-              transform=ax5r.transAxes, fontsize=12)
-    ax5r.set_title("McNemar Discordant Pairs")
-    ax5r.axis("off")
-
-fig.suptitle("RQ2 — McNemar Test: SVM-LOSO vs AQ-10 Clinical Rule", y=1.02)
-fig.tight_layout()
-save_fig(fig, "F_rq2_5_mcnemar_disagreement.png")
-print("  ✓ F5: McNemar disagreement")
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 12. MASTER SUMMARY
@@ -813,7 +768,4 @@ print(f"  Figures         : {DIRS['figures']}")
 print("\n" + "=" * 78)
 print("STATUS: RQ2 FINAL-MONO-10.1-RQ2 COMPLETE")
 print("=" * 78)
-
-# from google.colab import drive  # Colab-only; locally, set the AQ10_BASE environment variable instead
-# drive.mount('/content/drive')
 

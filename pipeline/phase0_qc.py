@@ -1,5 +1,6 @@
 # Converted from v2_Thesis_phase_0.ipynb with outputs removed.
-# This script contains no data files. Set AQ10_BASE to the folder that holds your private copy.
+# This script contains no data files. It needs the original school spreadsheets, which are not shared;
+# use pipeline/prepare_from_zenodo.py instead. Set AQ10_BASE to the folder that holds your private copy.
 # Do not commit CSV, XLSX, PDF, ZIP or joblib files.
 
 # ==============================================================================
@@ -55,7 +56,6 @@ import warnings
 import pandas as pd
 import numpy as np
 from sklearn.model_selection import train_test_split, StratifiedKFold
-# from google.colab import drive  # Colab-only; locally, set the AQ10_BASE environment variable instead
 
 random.seed(SEED)
 np.random.seed(SEED)
@@ -69,13 +69,12 @@ print(f"  SEED={SEED}  PYTHONHASHSEED={SEED}  CUBLAS_WORKSPACE_CONFIG=:4096:8")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# STEP 0B — DRIVE MOUNT & DIRECTORY TREE
+# STEP 0B — PATHS & DIRECTORY TREE
 # ══════════════════════════════════════════════════════════════════════════════
 
-print("\n[Step 0B]  Mounting drive & initializing directory tree ...")
-# drive.mount("/content/drive", force_remount=True)
+print("\n[Step 0B]  Initializing directory tree ...")
 
-BASE_DIR    = os.environ.get("AQ10_BASE", "/content/drive/MyDrive/Autism")
+BASE_DIR    = os.environ.get("AQ10_BASE", os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "work"))
 DATA_DIR    = os.path.join(BASE_DIR,    "Data")
 PROJECT_DIR = os.path.join(BASE_DIR,    "aq_10")
 
@@ -85,7 +84,7 @@ for fname in ["ASD.xlsx", "Normal.xlsx"]:
     if not os.path.exists(fp):
         raise FileNotFoundError(
             f"CRITICAL: {fp} not found.\n"
-            f"Ensure the 'Autism/Data/' folder exists in My Drive.")
+            f"Put ASD.xlsx and Normal.xlsx in <AQ10_BASE>/Data/.")
 
 SUBDIRS = {
     "raw":         os.path.join(PROJECT_DIR, "data/raw"),

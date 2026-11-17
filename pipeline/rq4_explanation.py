@@ -1,5 +1,11 @@
+"""RQ4 - What the model relies on: Kernel SHAP, permutation importance and subgroups.
 
-
+Run after rq3_augmentation.py. Explains the leave-one-school-out SVM with Kernel SHAP and pooled
+permutation importance, checks how stable the item ranking is across left-out schools and
+describes subgroups. Writes tables to <work>/aq_10/rq4/, and three figures to
+<work>/aq_10/figures/: item attribution, SHAP values of every child by answer, and sensitivity
+and specificity by subgroup.
+"""
 import subprocess, sys, os, json, time, random, warnings
 from datetime import datetime
 from itertools import combinations
@@ -11,9 +17,10 @@ warnings.filterwarnings("ignore")
 
 import numpy as np
 import pandas as pd
+import matplotlib
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-import matplotlib.patches as mpatches
-import seaborn as sns
+from matplotlib.patches import Rectangle
 
 np.random.seed(SEED)
 
@@ -24,7 +31,6 @@ except ImportError:
                    capture_output=True)
     import shap
 
-# from google.colab import drive  # Colab-only; locally, set the AQ10_BASE environment variable instead
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVC
@@ -43,9 +49,7 @@ print("RQ4 — EXPLAINABILITY (XAI) & SUBGROUP PERFORMANCE ANALYSIS")
 print("BD-AQ10(+SQ4) MULTI-CENTER SCHOOL SCREENING | FINAL-Q1-10.0-RQ4-XAI-POOLEDPI")
 print("=" * 78)
 
-# drive.mount("/content/drive", force_remount=True)
-
-BASE    = os.environ.get("AQ10_BASE", "/content/drive/MyDrive/Autism")
+BASE    = os.environ.get("AQ10_BASE", os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "work"))
 PROJECT = os.path.join(BASE, "aq_10")          # FIXED: must match RQ3
 PROC    = os.path.join(PROJECT, "data", "processed")
 
@@ -58,11 +62,10 @@ RQ4 = os.path.join(PROJECT, "rq4")
 DIRS = {
     "tables":      os.path.join(RQ4, "tables"),
     "paper_ready": os.path.join(RQ4, "tables", "paper_ready"),
-    "figures":     os.path.join(RQ4, "figures"),
     "results":     os.path.join(RQ4, "results"),
     "logs":        os.path.join(RQ4, "logs"),
     "pt_tables":   os.path.join(PROJECT, "paper_results", "rq4", "tables"),
-    "pt_figures":  os.path.join(PROJECT, "paper_results", "rq4", "figures"),
+    "figures": os.path.join(PROJECT, "figures"),
 }
 for d in DIRS.values():
     os.makedirs(d, exist_ok=True)
@@ -194,11 +197,6 @@ def save_tbl(df, name):
 def save_pr(df, name):
     for d in [DIRS["paper_ready"], DIRS["pt_tables"]]:
         df.to_csv(os.path.join(d, name), index=False)
-
-def save_fig(fig, name):
-    for d in [DIRS["figures"], DIRS["pt_figures"]]:
-        fig.savefig(os.path.join(d, name), dpi=300, bbox_inches="tight")
-    plt.close(fig)
 
 def build_model():
     return Pipeline([("scaler", StandardScaler()), ("clf", SVC(**LOCKED_PARAMS))])
@@ -818,259 +816,134 @@ print("  11 tables saved (7 full + 4 paper-ready)")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# SECTION 13 — 10 PUBLICATION-QUALITY FIGURES
+# SECTION 13: FIGURES
 # ══════════════════════════════════════════════════════════════════════════════
 
-print("\n[Step 12] Generating 10 figures...")
+import logging
+logging.getLogger("matplotlib.font_manager").setLevel(logging.ERROR)   # Arial is often missing on Linux; no warning flood
+FIG_STYLE = {"font.family": "sans-serif", "font.sans-serif": ["Arial", "Liberation Sans", "DejaVu Sans"],
+             "font.size": 7, "axes.linewidth": 0.6, "xtick.major.width": 0.6, "ytick.major.width": 0.6,
+             "xtick.major.size": 2.5, "ytick.major.size": 2.5, "axes.spines.top": False, "axes.spines.right": False}
+FIG_DIR = DIRS["figures"]
+os.makedirs(FIG_DIR, exist_ok=True)
+FIGURES_SAVED = []
 
-plt.rcParams.update({
-    "font.family": "DejaVu Sans", "font.size": 11, "axes.titlesize": 13,
-    "axes.labelsize": 11, "legend.fontsize": 9, "figure.dpi": 100,
-    "axes.spines.top": False, "axes.spines.right": False,
-})
 
-C_CONSIST  = "#9467bd"
-C_MODERATE = "#ff7f0e"
-C_VARIABLE = "#cccccc"
-C_ASD      = "#d62728"
-C_NORMAL   = "#1f77b4"
+def save_figure(fig, name):
+    """Save a figure at 600 dpi in <work>/aq_10/figures/ and close it."""
+    path = os.path.join(FIG_DIR, name)
+    fig.savefig(path, dpi=600)
+    plt.close(fig)
+    FIGURES_SAVED.append(name)
+    print(f"  [figure] {path}")
 
-def get_bar_color(col):
-    row = classify_df[classify_df["Feature"]==col]
-    if len(row)==0: return C_MODERATE
-    cls = row["Classification"].values[0]
-    return C_CONSIST if cls=="Consistent" else C_VARIABLE if cls=="Variable" else C_MODERATE
 
-handles = [mpatches.Patch(color=C_CONSIST,  label="Consistent"),
-           mpatches.Patch(color=C_MODERATE, label="Moderate"),
-           mpatches.Patch(color=C_VARIABLE, label="Variable")]
+print("\n[Step 12] Figures...")
+order_f4 = list(shap_sort_idx)                                  # largest mean |SHAP| first
+names_f4 = [feat_label(FSTAR_COLS[j]).replace(" – ", " ") for j in order_f4]
+ypos_f4 = np.arange(FSTAR_N)[::-1]
+rows_f4 = asd_idx + normal_idx                                  # ASD schools first, then mainstream
+ranks_f4 = shap_ranks[rows_f4]
+err = lambda v, lo, hi: [np.clip(v - lo, 0, None), np.clip(hi - v, 0, None)]
+with plt.rc_context(FIG_STYLE):
+    fig = plt.figure(figsize=(7.16, 2.75))
+    ax_a = fig.add_axes([0.265, 0.15, 0.19, 0.79])     # room on the left for the item names
+    ax_b = fig.add_axes([0.48, 0.15, 0.125, 0.79])
+    ax_c = fig.add_axes([0.635, 0.15, 0.232, 0.79])    # room on the right for "S12 mainstream"
+    ekw = {"elinewidth": 0.8, "capsize": 1.5, "capthick": 0.8, "ecolor": "#222222"}
+    # (a) mean |SHAP| with 95% intervals from the bootstrap over schools
+    v = mean_abs_shap[order_f4]
+    ax_a.barh(ypos_f4, v, 0.6, xerr=err(v, shap_lo[order_f4], shap_hi[order_f4]), color="#2B8CC4", error_kw=ekw)
+    ax_a.set_yticks(ypos_f4); ax_a.set_yticklabels(names_f4)
+    ax_a.set_xlabel("Mean |SHAP| (probability scale)")
+    # (b) permutation importance with the 2.5th to 97.5th percentiles of the repeats
+    v = global_pi_mean[order_f4]
+    ax_b.barh(ypos_f4, v, 0.6, xerr=err(v, pi_ci_lo[order_f4], pi_ci_hi[order_f4]), color="#56B4E9", error_kw=ekw)
+    ax_b.axvline(0, color="#222222", lw=0.6)
+    ax_b.set_yticks(ypos_f4); ax_b.set_yticklabels([])
+    ax_b.set_xlabel("AUROC drop")
+    ax_b.text(0.98, 0.03, f"Spearman ρ = {rho_shap_pi:.2f}\nwith panel (a)", transform=ax_b.transAxes,
+              ha="right", va="bottom", fontsize=6.5)
+    for ax_ in (ax_a, ax_b):
+        ax_.set_ylim(-0.6, FSTAR_N - 0.4)
+    # (c) rank of each item within each left-out school, S06 outlined
+    ax_c.imshow(ranks_f4, cmap="Blues_r", vmin=1, vmax=FSTAR_N + 2, aspect="auto")
+    for i in range(ranks_f4.shape[0]):
+        for j in range(FSTAR_N):
+            r = int(ranks_f4[i, j])
+            ax_c.text(j, i, str(r), ha="center", va="center", fontsize=6.5, color="white" if r <= 4 else "#222222")
+    ax_c.axhline(len(asd_idx) - 0.5, color="white", lw=2.5)
+    for i, si in enumerate(rows_f4):
+        if SCHOOLS[si] == "SCH_006":
+            ax_c.add_patch(Rectangle((-0.5, i - 0.5), FSTAR_N, 1, fill=False, ec="#D55E00", lw=1.3))
+    ax_c.set_xticks(range(FSTAR_N)); ax_c.set_xticklabels([c.replace("A_", "") for c in FSTAR_COLS], fontsize=6.5)
+    ax_c.set_yticks(range(len(rows_f4)))
+    ax_c.set_yticklabels([f"S{SCHOOLS[si][-2:]} {'ASD' if school_types[si] == 'ASD' else 'mainstream'}" for si in rows_f4])
+    ax_c.yaxis.tick_right()
+    ax_c.tick_params(length=0)
+    for sp_ in ax_c.spines.values():
+        sp_.set_visible(False)
+    ax_c.set_title("Item rank in each left-out school (1 = highest)", fontsize=7, loc="left", pad=3)
+    for ax_, letter, dx in ((ax_a, "(a)", -1.36), (ax_b, "(b)", -0.18), (ax_c, "(c)", -0.11)):
+        ax_.text(dx, 1.0, letter, transform=ax_.transAxes, fontsize=8, fontweight="bold", va="bottom")
+    save_figure(fig, "rq4_item_attribution.png")
 
-# ── FIGURE 1: SHAP Beeswarm ───────────────────────────────────────────────────
-print("  F1: SHAP Beeswarm...")
-shap.summary_plot(
-    shap_matrix, features=feat_vals_raw,
-    feature_names=[feat_label(c) for c in FSTAR_COLS],
-    plot_type="dot", max_display=FSTAR_N, show=False, color_bar=True, plot_size=None,
-)
-fig = plt.gcf()
-fig.set_size_inches(10, 6)
-for ax in fig.get_axes():
-    if ax.get_xlabel():
-        ax.set_title(
-            f"RQ4 — SHAP Beeswarm Summary  (F*={FSTAR}, N={N_TOTAL} instances)\n"
-            "Colour = feature value (red=high, blue=low)  |  x-axis = SHAP impact on P(ASD)",
-            fontsize=11, pad=10)
-        break
-plt.tight_layout()
-for d in [DIRS["figures"], DIRS["pt_figures"]]:
-    fig.savefig(os.path.join(d, "F_rq4_1_shap_beeswarm.png"), dpi=300, bbox_inches="tight")
-plt.close()
+# SHAP value of every child for every item, coloured by the answer (aligned 0 to 3)
+ANS_COL = ["#4A8FC7", "#BFD7EA", "#F3C6A5", "#D55E00"]
+with plt.rc_context(FIG_STYLE):
+    fig, ax = plt.subplots(figsize=(5.6, 3.0))
+    fig.subplots_adjust(left=0.35, right=0.8, bottom=0.14, top=0.97)
+    jit = np.random.default_rng(3)                    # jitter only; no effect on any number
+    for r_, j in enumerate(order_f4):
+        sv, fv = shap_matrix[:, j], feat_vals_raw[:, j].astype(int)
+        ax.scatter(sv, (FSTAR_N - 1 - r_) + jit.uniform(-0.3, 0.3, len(sv)), c=[ANS_COL[v] for v in fv],
+                   s=1.6, lw=0, alpha=0.75)
+    ax.axvline(0, color="#888888", lw=0.6)
+    ax.set_yticks(ypos_f4); ax.set_yticklabels(names_f4)
+    ax.set_ylim(-0.6, FSTAR_N - 0.4)
+    ax.set_xlabel("SHAP value (change in predicted probability)")
+    ax.legend(handles=[plt.Line2D([], [], marker="o", ls="", ms=3.5, color=ANS_COL[v], label=lab) for v, lab in
+                       enumerate(["0, no trait", "1", "2", "3, strongest trait"])],
+              title="Answer (aligned)", loc="center left", bbox_to_anchor=(1.01, 0.5), frameon=False, fontsize=6,
+              title_fontsize=6)
+    save_figure(fig, "rq4_shap_values_by_answer.png")
 
-# ── FIGURE 2: SHAP Global Importance Bar ─────────────────────────────────────
-print("  F2: SHAP importance bar...")
-fig, ax = plt.subplots(figsize=(11, 5))
-labels_s = [feat_label(FSTAR_COLS[j]) for j in shap_sort_idx]
-vals_s   = mean_abs_shap[shap_sort_idx]
-err_lo_s = vals_s - shap_lo[shap_sort_idx]
-err_hi_s = shap_hi[shap_sort_idx] - vals_s
-colors_s = [get_bar_color(FSTAR_COLS[j]) for j in shap_sort_idx]
-x = np.arange(FSTAR_N)
-ax.bar(x, vals_s, color=colors_s, alpha=0.85, edgecolor="white",
-       yerr=[err_lo_s, err_hi_s], capsize=5, error_kw={"elinewidth":1.5, "ecolor":"#555555"})
-ax.set_xticks(x); ax.set_xticklabels(labels_s, rotation=38, ha="right", fontsize=9.5)
-ax.set_ylabel("Mean |SHAP value|  (impact on P(ASD))")
-ax.set_title(f"RQ4 — Global Feature Importance: KernelSHAP  (F*={FSTAR})\n"
-             f"Error bars = school-level bootstrap 95% CI (B={N_BOOT_SCHOOL})")
-ax.axhline(0, color="black", lw=0.8, linestyle="--", alpha=0.4)
-ax.grid(True, axis="y", linestyle=":", alpha=0.35)
-ax.legend(handles=handles, loc="upper right", fontsize=9)
-save_fig(fig, "F_rq4_2_shap_bar_global.png")
+# Sensitivity and specificity by subgroup (95% Wilson intervals)
+def wilson_ci(k, n, z=1.959964):
+    ph = k / n; den = 1 + z * z / n; c = (ph + z * z / (2 * n)) / den
+    h = z * np.sqrt(ph * (1 - ph) / n + z * z / (4 * n * n)) / den
+    return ph, c - h, c + h
 
-# ── FIGURE 3: Pooled PI Importance Bar ────────────────────────────────────────
-print("  F3: Pooled PI bar...")
-fig, ax = plt.subplots(figsize=(11, 5))
-labels_p = [feat_label(FSTAR_COLS[j]) for j in pi_sort_idx]
-vals_p   = global_pi_mean[pi_sort_idx]
-err_lo_p = vals_p - pi_ci_lo[pi_sort_idx]
-err_hi_p = pi_ci_hi[pi_sort_idx] - vals_p
-colors_p = [get_bar_color(FSTAR_COLS[j]) for j in pi_sort_idx]
-ax.bar(x, vals_p, color=colors_p, alpha=0.85, edgecolor="white",
-       yerr=[err_lo_p, err_hi_p], capsize=5, error_kw={"elinewidth":1.5, "ecolor":"#555555"})
-ax.set_xticks(x); ax.set_xticklabels(labels_p, rotation=38, ha="right", fontsize=9.5)
-ax.set_ylabel("Mean Pooled Permutation Importance\n(drop in pooled AUROC when permuted)")
-ax.set_title(f"RQ4 — Validation XAI: Pooled Global Permutation Importance  (F*={FSTAR})\n"
-             f"Error bars = 95% CI over {N_PI_REPEATS_GLOBAL} repeats  |  "
-             f"Spearman rho vs SHAP = {rho_shap_pi:.4f}")
-ax.axhline(0, color="black", lw=0.8, linestyle="--", alpha=0.4)
-ax.grid(True, axis="y", linestyle=":", alpha=0.35)
-ax.legend(handles=handles, loc="upper right", fontsize=9)
-save_fig(fig, "F_rq4_3_pi_bar_global.png")
+def subgroup_name(s):
+    s = s.replace("<=", "\u2264").replace(">=", "\u2265")
+    return {"gender = f": "Girls", "gender = m": "Boys", "family_hx = yes": "Family history: yes",
+            "family_hx = no": "Family history: no"}.get(s.lower(), s)
 
-# ── FIGURE 4: SHAP by School Type ────────────────────────────────────────────
-print("  F4: SHAP by school type...")
-fig, axes = plt.subplots(1, 2, figsize=(14, 5))
-for ax, idx_list, title, color in [
-    (axes[0], asd_idx,    f"ASD Schools ({len(asd_idx)} folds)",    C_ASD),
-    (axes[1], normal_idx, f"Normal Schools ({len(normal_idx)} folds)", C_NORMAL),
-]:
-    m_v  = shap_school_means[idx_list].mean(axis=0) if idx_list else np.zeros(FSTAR_N)
-    ord_ = np.argsort(m_v)[::-1]
-    x_   = np.arange(FSTAR_N)
-    ax.bar(x_, m_v[ord_], color=color, alpha=0.80, edgecolor="white")
-    ax.set_xticks(x_)
-    ax.set_xticklabels([feat_label(FSTAR_COLS[j]) for j in ord_], rotation=38, ha="right", fontsize=9)
-    ax.set_title(title, fontsize=12)
-    ax.set_ylabel("Mean |SHAP value|")
-    ax.axhline(0, color="black", lw=0.8)
-    ax.grid(True, axis="y", linestyle=":", alpha=0.35)
-    for xi, vi in enumerate(m_v[ord_]):
-        if vi > 0:
-            ax.text(xi, vi+1e-5, str(xi+1), ha="center", va="bottom", fontsize=8.5, color="black")
-fig.suptitle(f"RQ4 — SHAP Importance by School Type  (F*={FSTAR})\nNumber = within-type rank",
-             y=1.02, fontsize=12)
-fig.tight_layout()
-save_fig(fig, "F_rq4_4_shap_by_school_type.png")
-
-# ── FIGURE 5: School x Feature SHAP Heatmap ──────────────────────────────────
-print("  F5: SHAP heatmap...")
-school_labels_fig = [f"{s}\n({t})" for s,t in zip(SCHOOLS, school_types)]
-feat_labels_fig   = [feat_label(c) for c in FSTAR_COLS]
-shap_heat_df = pd.DataFrame(shap_school_means, index=school_labels_fig, columns=feat_labels_fig)
-fw = max(10, FSTAR_N*0.85); fh = max(6, N_SCHOOLS*0.55)
-fig, ax = plt.subplots(figsize=(fw, fh))
-sns.heatmap(shap_heat_df, ax=ax, cmap="YlOrRd", annot=True, fmt=".4f",
-            linewidths=0.4, annot_kws={"fontsize":7.5}, cbar_kws={"label":"Mean |SHAP value|"})
-ax.set_title(f"RQ4 — KernelSHAP: School x Feature  (F*={FSTAR})\n"
-             "Each cell = mean |SHAP| for that school's held-out students")
-ax.tick_params(axis="x", rotation=38); ax.tick_params(axis="y", rotation=0)
-save_fig(fig, "F_rq4_5_shap_heatmap_school_x_feature.png")
-
-# ── FIGURE 6: Spearman rho Heatmap ───────────────────────────────────────────
-print("  F6: Spearman heatmap...")
-fig, ax = plt.subplots(figsize=(max(8,N_SCHOOLS*0.7), max(7,N_SCHOOLS*0.65)))
-rho_plot = rho_mat.copy()
-np.fill_diagonal(rho_plot, np.nan)
-annot_arr = np.array([[f"{rho_plot[i,j]:.2f}" if i!=j else "" for j in range(N_SCHOOLS)] for i in range(N_SCHOOLS)])
-xlbl = [f"{s}\n({t[0]})" for s,t in zip(SCHOOLS, school_types)]
-sns.heatmap(rho_plot, ax=ax, annot=annot_arr, fmt="", cmap="RdYlGn", vmin=-1, vmax=1,
-            center=0, linewidths=0.5, xticklabels=xlbl, yticklabels=xlbl,
-            annot_kws={"fontsize":8.5}, cbar_kws={"label":"Spearman rho"})
-ax.set_title(f"RQ4 — Pairwise Spearman rho of SHAP Rankings\n"
-             f"Mean rho = {mean_rho:.4f}  [{min_rho:.4f}, {max_rho:.4f}]  |  {rho_strength_only(mean_rho)} stability")
-ax.tick_params(axis="x", rotation=40); ax.tick_params(axis="y", rotation=0)
-save_fig(fig, "F_rq4_6_spearman_heatmap.png")
-
-# ── FIGURE 7: SHAP vs Pooled-PI Scatter ─────────────────────────────────────
-print("  F7: SHAP vs PI consistency...")
-fig, ax = plt.subplots(figsize=(8, 6))
-for j, col in enumerate(FSTAR_COLS):
-    cls = classify_df.loc[classify_df["Feature"]==col,"Classification"].values[0]
-    c_  = C_CONSIST if cls=="Consistent" else C_VARIABLE if cls=="Variable" else C_MODERATE
-    ax.scatter(mean_abs_shap[j], global_pi_mean[j], s=130, color=c_,
-               alpha=0.82, edgecolors="white", zorder=3)
-    ax.annotate(col, (mean_abs_shap[j], global_pi_mean[j]),
-                xytext=(4,2), textcoords="offset points", fontsize=8.5, color="#333333")
-if FSTAR_N > 2:
-    z = np.polyfit(mean_abs_shap, global_pi_mean, 1)
-    xl = np.linspace(mean_abs_shap.min(), mean_abs_shap.max(), 100)
-    ax.plot(xl, np.poly1d(z)(xl), "--", color="#777777", lw=1.5,
-            label=f"Trend  (rho={rho_shap_pi:.3f}, p={p_shap_pi:.3g})")
-ax.set_xlabel("Mean |SHAP value|  (KernelSHAP)")
-ax.set_ylabel("Pooled Permutation Importance (AUROC-drop)")
-ax.set_title(f"RQ4 — XAI Consistency: KernelSHAP vs Pooled Global PI\n"
-             f"Spearman rho = {rho_shap_pi:.4f}  |  {rho_interpretation(rho_shap_pi)}")
-ax.legend(handles=handles + [plt.Line2D([0],[0],color="#777777",lw=1.5,
-          linestyle="--",label="Trend line")], fontsize=9)
-ax.grid(True, linestyle=":", alpha=0.35)
-save_fig(fig, "F_rq4_7_shap_vs_pi_consistency.png")
-
-# ── FIGURE 8: Model vs Rule Discriminability ──────────────────────────────────
-print("  F8: Model vs rule discriminability...")
-fig, ax = plt.subplots(figsize=(8, 6))
-for j, col in enumerate(FSTAR_COLS):
-    c_ = get_bar_color(col)
-    ax.scatter(disc_vals[j], mean_abs_shap[j], s=130, color=c_,
-               alpha=0.82, edgecolors="white", zorder=3)
-    ax.annotate(col, (disc_vals[j], mean_abs_shap[j]),
-                xytext=(4,2), textcoords="offset points", fontsize=8.5, color="#333333")
-if FSTAR_N > 2:
-    z = np.polyfit(disc_vals, mean_abs_shap, 1)
-    xl = np.linspace(min(disc_vals), max(disc_vals), 100)
-    ax.plot(xl, np.poly1d(z)(xl), "--", color="#777777", lw=1.5,
-            label=f"Trend  (rho={rho_shap_disc:.3f}, p={p_shap_disc:.3g})")
-ax.set_xlabel("Item Discriminability  P(item>=2|ASD) - P(item>=2|Normal)")
-ax.set_ylabel("Mean |SHAP value|  (model importance)")
-ax.set_title(f"RQ4 — Model Importance vs AQ-10 Item Discriminability\n"
-             f"Spearman rho = {rho_shap_disc:.4f}  (p={p_shap_disc:.4g})")
-ax.legend(handles=handles + [plt.Line2D([0],[0],color="#777777",lw=1.5,
-          linestyle="--",label="Trend line")], fontsize=9)
-ax.grid(True, linestyle=":", alpha=0.35)
-save_fig(fig, "F_rq4_8_model_vs_rule_discriminability.png")
-
-# ── FIGURE 9: Fairness Subgroup Chart ────────────────────────────────────────
-print("  F9: Fairness subgroups...")
-if len(fairness_df) > 0:
-    n_sg   = len(fairness_df)
-    sg_names = fairness_df["Subgroup"].values
-    sg_sens  = pd.to_numeric(fairness_df["Sensitivity"], errors="coerce").values
-    sg_spec  = pd.to_numeric(fairness_df["Specificity"], errors="coerce").values
-    sg_small = fairness_df["Is_Exploratory"].values
-    sg_nw    = fairness_df["Noteworthy"].values
-    x_sg     = np.arange(n_sg)
-
-    fig, axes = plt.subplots(2, 1, figsize=(max(11, n_sg*1.15), 10))
-    for ax, vals, global_v, ylabel, col_ok in [
-        (axes[0], sg_sens, GLOBAL_SENS, "Sensitivity",  "#2ca02c"),
-        (axes[1], sg_spec, GLOBAL_SPEC, "Specificity",  "#1f77b4"),
-    ]:
-        bar_c = []
-        for i in range(n_sg):
-            if np.isnan(vals[i]): bar_c.append("#eeeeee")
-            elif sg_small[i]:     bar_c.append("#aaaaaa")
-            elif sg_nw[i]:        bar_c.append(C_ASD)
-            else:                 bar_c.append(col_ok)
-        bv = np.where(np.isnan(vals), 0, vals)
-        ax.bar(x_sg, bv, color=bar_c, alpha=0.85, edgecolor="white")
-        ax.axhline(global_v, color="black", lw=2, linestyle="--", label=f"Global = {global_v:.4f}")
-        ax.axhline(global_v-NOTEWORTHY_GAP, color=C_ASD, lw=1.5, linestyle=":",
-                   label=f"-{NOTEWORTHY_GAP*100:.0f}pp threshold")
-        ax.fill_between([-0.5,n_sg-0.5], global_v-NOTEWORTHY_GAP, global_v, alpha=0.06, color=col_ok)
-        ax.set_xticks(x_sg); ax.set_xticklabels(sg_names, rotation=35, ha="right", fontsize=9)
-        ax.set_ylim(0, 1.10); ax.set_ylabel(ylabel)
-        ax.set_title(f"RQ4 — {ylabel} by Subgroup  (F*={FSTAR})")
-        for i, v in enumerate(vals):
-            if np.isnan(v):
-                ax.text(i, 0.02, "N/A", ha="center", va="bottom", fontsize=7.5, color="#999999")
-        h = [mpatches.Patch(color=col_ok,    label="Within range"),
-             mpatches.Patch(color=C_ASD,     label=f"Noteworthy |Delta|>={NOTEWORTHY_GAP*100:.0f}pp"),
-             mpatches.Patch(color="#aaaaaa", label="Exploratory n<30"),
-             mpatches.Patch(color="#eeeeee", label="Undefined (mono-class)")]
-        ax.legend(handles=h, loc="lower right", fontsize=8.5)
-        ax.grid(True, axis="y", linestyle=":", alpha=0.35)
-    fig.suptitle("RQ4 — Subgroup Performance Audit  (Descriptive only)\n"
-                 "No confirmatory claims — subgroups n<30 labelled exploratory", y=1.01, fontsize=12)
-    fig.tight_layout()
-    save_fig(fig, "F_rq4_9_fairness_subgroups.png")
-
-# ── FIGURE 10: Feature Correlation Heatmap (NEW) ─────────────────────────────
-print("  F10: Feature correlation heatmap...")
-fig, ax = plt.subplots(figsize=(max(8, FSTAR_N*0.8), max(7, FSTAR_N*0.7)))
-mask = np.triu(np.ones_like(feat_corr, dtype=bool), k=1)
-sns.heatmap(feat_corr, mask=mask, annot=True, fmt=".2f", cmap="Blues",
-            vmin=0, vmax=1, square=True, linewidths=0.5,
-            xticklabels=[feat_label(c) for c in FSTAR_COLS],
-            yticklabels=[feat_label(c) for c in FSTAR_COLS],
-            annot_kws={"fontsize":9}, ax=ax,
-            cbar_kws={"shrink": 0.75, "label": "Pearson r"})
-ax.set_title(f"RQ4 — Feature Intercorrelation Matrix  (F*={FSTAR})\n"
-             f"max|r|={max_corr:.3f}  mean|r|={mean_corr:.3f}  |  "
-             f"{len(high_corr_pairs)} pairs with |r|>=0.50")
-plt.setp(ax.get_xticklabels(), rotation=45, ha="right")
-plt.setp(ax.get_yticklabels(), rotation=0)
-fig.tight_layout()
-save_fig(fig, "F_rq4_10_feature_correlation_heatmap.png")
-
-print(f"\n  All 10 figures saved")
+fd = fairness_df[fairness_df["Subgroup_Column"].isin(["Age", "Gender", "family_hx"])
+                 & ~fairness_df["Subgroup"].str.lower().str.endswith("nan")].reset_index(drop=True)
+with plt.rc_context(FIG_STYLE):
+    fig, axes_ = plt.subplots(1, 2, figsize=(7.16, 2.4), sharey=True)
+    fig.subplots_adjust(left=0.17, right=0.98, bottom=0.18, top=0.9, wspace=0.12)
+    for ax, (title, kcol, ncol2, glob, col) in zip(axes_, (
+            ("Sensitivity (ASD-school children)", "TP", "FN", GLOBAL_SENS, "#CC79A7"),
+            ("Specificity (mainstream children)", "TN", "FP", GLOBAL_SPEC, "#56B4E9"))):
+        lows = []
+        for i, r in fd.iterrows():
+            k, n = int(r[kcol]), int(r[kcol]) + int(r[ncol2])
+            if n == 0:
+                continue
+            ph, lo, hi = wilson_ci(k, n)
+            lows.append(lo)
+            yy = len(fd) - 1 - i
+            ax.errorbar(ph, yy, xerr=[[ph - lo], [hi - ph]], fmt="o", color=col, ms=3.5, elinewidth=0.9, capsize=1.5)
+            ax.text(ph, yy + 0.16, f"{k}/{n}", ha="center", va="bottom", fontsize=5.5, color="#444444")
+        ax.axvline(glob, color="#444444", ls="--", lw=0.7)
+        ax.set_xlim(max(0.0, min(lows) - 0.05) if lows else 0, 1.0)
+        ax.set_title(f"{title}; dashed line: all children ({glob:.3f})", fontsize=6.5, loc="left")
+        ax.set_xlabel("Proportion (95% Wilson interval)")
+    axes_[0].set_yticks(range(len(fd))); axes_[0].set_yticklabels([subgroup_name(s) for s in fd["Subgroup"]][::-1])
+    axes_[0].set_ylim(-0.6, len(fd) - 0.4)
+    save_figure(fig, "rq4_subgroup_sensitivity_specificity.png")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1197,7 +1070,7 @@ rq4_summary = {
         "n_subgroups":        len(fairness_df),
         "noteworthy_subgroups": noteworthy_groups,
     },
-    "figures": [f"F_rq4_{i+1}*.png" for i in range(10)],
+    "figures": FIGURES_SAVED,
     "tables":  [
         "T_rq4_shap_values_per_instance.csv",
         "T_rq4_shap_pi_importance_global.csv",
@@ -1235,7 +1108,7 @@ flag_content = (
     f"shap_pi_rho={rho_shap_pi:.4f}\n"
     f"mean_spearman_rho={mean_rho:.4f}\n"
     f"noteworthy_subgroups={noteworthy_groups}\n"
-    f"figures=10\ntables=12\nnext=phase_paper_compile\n"
+    f"figures={len(FIGURES_SAVED)}\ntables=12\nnext=step5_school_effects\n"
 )
 for fp in [os.path.join(DIRS["logs"],"rq4_done.flag"),
            os.path.join(PROJECT,"logs","rq4_done.flag")]:
@@ -1283,13 +1156,13 @@ print(f"\n  SUBGROUP AUDIT  (Descriptive)")
 print(f"  Noteworthy: {noteworthy_groups or 'None'}")
 
 print(f"\n  OUTPUTS")
-print(f"  Figures (10) : {DIRS['figures']}")
+print(f"  Figures      : {DIRS['figures']}")
 print(f"  Tables  (12) : {DIRS['tables']}")
 print(f"  Paper-ready  : {DIRS['paper_ready']}")
 print(f"  Summary JSON : {sp}")
 
 print("\n" + "=" * 78)
 print("STATUS: RQ4 FINAL-Q1-10.0-RQ4-XAI-POOLEDPI COMPLETE")
-print("NEXT  : phase_paper_compile.py -> numbers.md")
+print("NEXT  : step5_school_effects.py")
 print("=" * 78)
 

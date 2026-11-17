@@ -7,7 +7,8 @@ Run after rq4_explanation.py (it reads the RQ1 to RQ3 outputs and needs the RQ4 
 Added after the locked RQ1-RQ4 run, to check whether the RQ1 to RQ3 conclusions hold when the
 school, not the child, is treated as the unit, when the SVM settings are re-tuned inside every
 fold, and under both readings of the AQ-10 referral cut-off. Output:
-<AQ10_BASE>/aq_10/step6_robustness/ (tables/, report_step6.md) and logs/step6_done.flag.
+<work>/aq_10/step6_robustness/ (tables/, report_step6.md), logs/step6_done.flag, and one figure
+in <work>/aq_10/figures/ (school-level differences and AQ-10 cut-offs).
 Takes about 10-20 minutes; section E is the slow part.
 
 A. Paired decisions with the school as the unit (clustered McNemar, exact school-level sign-flip test)
@@ -18,6 +19,7 @@ E. Nested leave-one-school-out: the SVM grid re-tuned on the training schools of
 """
 import itertools
 import os
+import re
 import sys
 import time
 import warnings
@@ -26,6 +28,9 @@ SEED = 42
 os.environ["PYTHONHASHSEED"] = str(SEED)
 warnings.filterwarnings("ignore")
 
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import sklearn
@@ -43,7 +48,7 @@ np.random.seed(SEED)
 print("=" * 78)
 print("STEP 6 - ROBUSTNESS")
 print("=" * 78)
-BASE = os.environ.get("AQ10_BASE", "/content/drive/MyDrive/Autism")
+BASE = os.environ.get("AQ10_BASE", os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "work"))
 PROJECT = os.path.join(BASE, "aq_10")
 OUT = os.path.join(PROJECT, "step6_robustness")
 TAB = os.path.join(OUT, "tables")
@@ -299,6 +304,75 @@ R = ["## E. Nested leave-one-school-out: the SVM grid (12 settings) re-tuned on 
      f"AUROC difference (nested - locked) {auc(y, p_nest) - auc(y, bd.p_lock.values):+.3f} {ci(d_auc)}.",
      f"- Same decision for {int((f_nest == fl).sum())} of 843 children; S06 flagged nested {int(f_nest[S06].sum())} vs locked {int(fl[S06].sum())}."]
 write_report(R + ["", f"(E took {time.time() - t0:.0f} s; step 6 total {time.time() - T_START:.0f} s)"])
+
+# ══════════════════════════════════════════════════════════════════════════════
+# FIGURE
+# ══════════════════════════════════════════════════════════════════════════════
+
+import logging
+logging.getLogger("matplotlib.font_manager").setLevel(logging.ERROR)   # Arial is often missing on Linux; no warning flood
+FIG_STYLE = {"font.family": "sans-serif", "font.sans-serif": ["Arial", "Liberation Sans", "DejaVu Sans"],
+             "font.size": 7, "axes.linewidth": 0.6, "xtick.major.width": 0.6, "ytick.major.width": 0.6,
+             "xtick.major.size": 2.5, "ytick.major.size": 2.5, "axes.spines.top": False, "axes.spines.right": False}
+FIG_DIR = os.path.join(PROJECT, "figures")
+os.makedirs(FIG_DIR, exist_ok=True)
+FIGURES_SAVED = []
+
+
+def save_figure(fig, name):
+    """Save a figure at 600 dpi in <work>/aq_10/figures/ and close it."""
+    path = os.path.join(FIG_DIR, name)
+    fig.savefig(path, dpi=600)
+    plt.close(fig)
+    FIGURES_SAVED.append(name)
+    print(f"  [figure] {path}")
+
+
+print("\nFigure...")
+# (a) each left-out school: SVM minus rule, share of children flagged, with the child- and school-level tests
+# (b) AQ-10 cut-offs 4 to 8 on all children, with school-clustered intervals, against the SVM
+row_ = TA[(TA.comparison == "Unseen schools: SVM vs rule (S>=6)") & (TA.children == "all children")].iloc[0]
+num = lambda s_: [float(x) for x in re.findall(r"-?\d+\.\d+", s_)]
+with plt.rc_context(FIG_STYLE):
+    fig = plt.figure(figsize=(7.16, 2.7))
+    ax_a = fig.add_axes([0.085, 0.24, 0.47, 0.6])
+    ax_b = fig.add_axes([0.665, 0.24, 0.32, 0.6])
+    xs_, x_ = [], 0.0
+    for grp_ in (SP, MN):
+        for s in grp_:
+            d_ = 100 * (fl[IDX[s]].mean() - (tot[IDX[s]] >= 6).mean())
+            ax_a.bar(x_, d_, 0.7, color="#CC79A7" if s in SP else "#56B4E9", lw=0)
+            ax_a.text(x_, d_ + (1 if d_ >= 0 else -1), f"{d_:+.0f}", ha="center", va="bottom" if d_ >= 0 else "top", fontsize=5.8)
+            xs_.append(x_); x_ += 1.0
+        x_ += 0.5
+    ax_a.axhline(0, color="#222222", lw=0.6)
+    ax_a.set_xticks(xs_); ax_a.set_xticklabels([CODE[s] for s in SP + MN])
+    ax_a.set_ylabel("SVM minus rule, children flagged\n(percentage points)")
+    lo_, hi_ = ax_a.get_ylim(); ax_a.set_ylim(lo_ - 3, hi_ + 4)
+    ax_a.set_title(f"Children flagged by the SVM only: {row_.b}; by the rule only: {row_.c}\n"
+                   f"McNemar p, child level {pfmt(row_.p_child_level)}; school-clustered "
+                   f"{pfmt(row_.p_clustered_Durkalski)}; exact school-level sign-flip {pfmt(row_.p_school_signflip_exact)}",
+                   fontsize=6, loc="left")
+    n_sp = len(SP)
+    ax_a.text((xs_[0] + xs_[n_sp - 1]) / 2, -0.16, "ASD schools (gain in sensitivity)", ha="center", va="top",
+              fontsize=6.3, transform=ax_a.get_xaxis_transform())
+    ax_a.text((xs_[n_sp] + xs_[-1]) / 2, -0.16, "Mainstream schools (more false positives)", ha="center", va="top",
+              fontsize=6.3, transform=ax_a.get_xaxis_transform())
+    cut_ = list(range(4, 9))
+    for key_, ci_key, col, mk, lab in (("all843_sens", "all843_sens_school_ci", "#CC79A7", "o", "Sensitivity"),
+                                       ("all843_spec", "all843_spec_school_ci", "#56B4E9", "s", "Specificity")):
+        pts = TD[key_].values.astype(float)
+        cis = np.array([num(s_) for s_ in TD[ci_key]])
+        ax_b.errorbar(cut_, pts, yerr=[np.clip(pts - cis[:, 0], 0, None), np.clip(cis[:, 1] - pts, 0, None)], fmt=mk + "-",
+                      color=col, ms=3.5, lw=0.9, elinewidth=0.8, capsize=1.5, label=f"Rule, {lab.lower()}")
+    ax_b.axhline(rl["Sens"], color="#CC79A7", ls="--", lw=0.8, label=f"SVM, sensitivity ({rl['Sens']:.3f})")
+    ax_b.axhline(rl["Spec"], color="#56B4E9", ls="--", lw=0.8, label=f"SVM, specificity ({rl['Spec']:.3f})")
+    ax_b.set_xticks(cut_); ax_b.set_xticklabels([f"\u2265{c}" for c in cut_])
+    ax_b.set_xlabel("AQ-10 cut-off (school-clustered 95% interval)"); ax_b.set_ylabel("Proportion, all 843 children")
+    ax_b.legend(loc="lower left", frameon=False, fontsize=5.8)
+    fig.text(0.005, 0.95, "(a)", fontsize=8, fontweight="bold", va="bottom")
+    fig.text(0.585, 0.95, "(b)", fontsize=8, fontweight="bold", va="bottom")
+    save_figure(fig, "step6_school_level_tests_and_cutoffs.png")
 
 with open(os.path.join(PROJECT, "logs", "step6_done.flag"), "w") as fh:
     fh.write(f"step6_robustness complete\nscikit-learn={sklearn.__version__}\n")

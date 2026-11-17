@@ -11,12 +11,16 @@ that file into the exact inputs that rq1_baseline.py to rq4_explanation.py read:
     <AQ10_BASE>/aq_10/config/master_config.json
     <AQ10_BASE>/aq_10/config/cv_fold_indices.json
     <AQ10_BASE>/aq_10/logs/phase0_done.flag
+    <AQ10_BASE>/aq_10/figures/study_design.png
 
 Row order, the development/test split and the five cross-validation folds come
 from config/split_assignment.csv, so the downstream scripts see the same rows in
 the same order as in the locked run. School names are replaced by school codes.
 
-Usage (AQ10_BASE set to an empty working folder; default ./work):
+AQ10_BASE is the working folder. If it is not set, every script uses the folder
+work/ inside this repository (ignored by git). Nothing is written anywhere else.
+
+Usage:
     python pipeline/prepare_from_zenodo.py path/to/full_dataset.csv
     python pipeline/prepare_from_zenodo.py        # asks for the path
     %run pipeline/prepare_from_zenodo.py          # in a Colab notebook: shows an upload button
@@ -29,6 +33,10 @@ import sys
 import pandas as pd
 
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))   # repository root
+# Forms received and children excluded for age, from the Phase-0 log (phase0_qc.py). The Zenodo
+# file holds only the 843 children analysed, so these two counts cannot be recomputed from it.
+FORMS_RECEIVED = (419, 444)          # ASD schools, mainstream schools
+EXCLUDED_FOR_AGE = (16, 4)
 FORWARD = ["Q1", "Q5", "Q7", "Q10", "SQ1", "SQ2", "SQ3"]
 REVERSE = ["Q2", "Q3", "Q4", "Q6", "Q8", "Q9", "SQ4"]
 AQ_ITEMS = [f"Q{i}" for i in range(1, 11)]
@@ -105,6 +113,138 @@ def build(full_dataset_csv, base):
     print(f"Wrote {proj}")
     print(f"  children {len(bd)} (ASD school {int(bd.label.sum())}, mainstream {int((1 - bd.label).sum())})")
     print(f"  development {len(dev)}, test {len(test)}, AQ-10 rule positive {int(bd.AQ_rule_pred.sum())}")
+    design = os.path.join(proj, "figures", "study_design.png")
+    draw_study_design(bd, dev, test, design)
+    print(f"  [figure] {design}")
+    return design
+
+
+def draw_study_design(bd, dev, test, out_path):
+    """Study design, with the cohort counts taken from the data."""
+    import logging
+
+    import matplotlib
+    from matplotlib.figure import Figure                  # no pyplot: safe inside a notebook kernel
+    from matplotlib.patches import FancyBboxPatch, Rectangle
+
+    logging.getLogger("matplotlib.font_manager").setLevel(logging.ERROR)
+    cnt = lambda d: (int(d.label.sum()), int((1 - d.label).sum()))
+    a_all, a_dev, a_test = cnt(bd), cnt(dev), cnt(test)
+    if tuple(f - e for f, e in zip(FORMS_RECEIVED, EXCLUDED_FOR_AGE)) != a_all:
+        print("  WARNING: the Phase-0 counts in the study design do not match this file "
+              f"({FORMS_RECEIVED} - {EXCLUDED_FOR_AGE} vs {a_all}).")
+    sizes = bd.school_id.value_counts()
+    n_sch = len(sizes)
+    n_asd_sch = bd.loc[bd.label == 1, "school_id"].nunique()
+    words = {12: "Twelve"}
+    style = {"font.family": "sans-serif", "font.sans-serif": ["Arial", "Liberation Sans", "DejaVu Sans"], "font.size": 7}
+    with matplotlib.rc_context(style):
+        W, H = 7.16, 3.55
+        fig = Figure(figsize=(W, H))
+        ax = fig.add_axes([0, 0, 1, 1]); ax.set_xlim(0, W); ax.set_ylim(0, H); ax.axis("off")
+        INK = "#333333"; BLUE = "#2b5c8a"; BLUEF = "#eaf0f7"; GREEN = "#2e6e4e"; GREENF = "#eaf4ee"
+
+        def box(x, y, w, h, title, lines, fc="white", ec=INK, lw=0.8, ts=7.3, ls=6.8, dashed=False):
+            ax.add_patch(FancyBboxPatch((x, y), w, h, boxstyle="round,pad=0,rounding_size=0.04", fc=fc, ec=ec, lw=lw,
+                                        ls="--" if dashed else "-"))
+            n = len(lines) + (1 if title else 0); step = 0.125; top = y + h / 2 + (n - 1) * step / 2
+            k = 0
+            if title:
+                ax.text(x + w / 2, top, title, ha="center", va="center", fontsize=ts, fontweight="bold", color=INK); k = 1
+            for i, l in enumerate(lines):
+                ax.text(x + w / 2, top - (i + k) * step, l, ha="center", va="center", fontsize=ls, color=INK)
+
+        def arrow(x0, y0, x1, y1, c=INK):
+            ax.annotate("", xy=(x1, y1), xytext=(x0, y0),
+                        arrowprops=dict(arrowstyle="-|>", color=c, lw=0.8, shrinkA=0, shrinkB=0, mutation_scale=7))
+
+        def line(xs, ys, c=INK):
+            ax.plot(xs, ys, color=c, lw=0.8, solid_capstyle="butt")
+
+        # row 1
+        y1, h1 = 2.93, 0.50; bw = 1.27; gap = (W - 0.10 - 5 * bw) / 4; xs = [0.05 + i * (bw + gap) for i in range(5)]
+        r1 = [(f"{words.get(n_sch, n_sch)} schools", ["Bangladesh", f"{n_asd_sch} ASD, {n_sch - n_asd_sch} mainstream"]),
+              ("Forms received", [f"n = {sum(FORMS_RECEIVED)}", f"{FORMS_RECEIVED[0]} / {FORMS_RECEIVED[1]}"]),
+              ("Analysis cohort", [f"n = {len(bd)}, aged {bd.Age.min()} to {bd.Age.max()}", f"{a_all[0]} / {a_all[1]}"]),
+              ("Predictors", ["AQ-10 Child, Q1 to Q10", "aligned 0 to 3"]),
+              ("Label (proxy) and rule", ["ASD-school placement", "AQ-10 score ≥ 6"])]
+        for x, (t, l) in zip(xs, r1):
+            box(x, y1, bw, h1, t, l)
+        for i in range(4):
+            arrow(xs[i] + bw, y1 + h1 / 2, xs[i + 1], y1 + h1 / 2)
+        ax.text(xs[0] + 0.02, y1 - 0.09, "Counts are ASD / mainstream", fontsize=6.2, style="italic", color="#666666", va="center")
+        ax.text(xs[3] + bw / 2, y1 - 0.09, "SQ1 to SQ4 added for the 14-item set", fontsize=6.2, style="italic",
+                color="#666666", va="center", ha="center")
+        ex_x = xs[1] + bw + gap / 2; line([ex_x, ex_x], [y1 + h1 / 2, y1 - 0.17])
+        box(ex_x - 0.62, y1 - 0.47, 1.24, 0.30, None,
+            [f"Excluded: age outside {bd.Age.min()} to {bd.Age.max()}",
+             f"n = {sum(EXCLUDED_FOR_AGE)} ({EXCLUDED_FOR_AGE[0]} / {EXCLUDED_FOR_AGE[1]})"],
+            fc="#f6f6f6", ec="#888888", dashed=True, ls=6.4)
+        arrow(ex_x, y1 - 0.17, ex_x, y1 - 0.17)
+        cx = xs[2] + bw / 2; yb = 2.28; line([cx, cx], [y1, yb])
+        pA = (0.05, 0.98, 3.50, 1.22); pB = (3.61, 0.98, 3.50, 1.22)
+        line([pA[0] + pA[2] / 2, pB[0] + pB[2] / 2], [yb, yb])
+        arrow(pA[0] + pA[2] / 2, yb, pA[0] + pA[2] / 2, pA[1] + pA[3]); arrow(pB[0] + pB[2] / 2, yb, pB[0] + pB[2] / 2, pB[1] + pB[3])
+        # arm A
+        ax.add_patch(FancyBboxPatch(pA[:2], pA[2], pA[3], boxstyle="round,pad=0,rounding_size=0.05", fc=BLUEF, ec="#8fa9c6", lw=0.9))
+        ax.text(pA[0] + 0.10, pA[1] + pA[3] - 0.12, "A. Internal test-set validation", fontsize=7.6, fontweight="bold", color=BLUE, va="center")
+        bx, by, bwid, bh = pA[0] + 0.12, pA[1] + 0.77, pA[2] - 0.24, 0.17
+        ax.add_patch(Rectangle((bx, by), bwid * 0.8, bh, fc="#c5d5e8", ec="#8fa9c6", lw=0.6))
+        ax.add_patch(Rectangle((bx + bwid * 0.8, by), bwid * 0.2, bh, fc=BLUE, ec="#8fa9c6", lw=0.6))
+        ax.text(bx + bwid * 0.4, by + bh / 2, f"Development set, n = {len(dev)} ({a_dev[0]} / {a_dev[1]})",
+                ha="center", va="center", fontsize=6.6, color=INK)
+        ax.text(bx + bwid * 0.9, by + bh / 2, f"Test, n = {len(test)}", ha="center", va="center", fontsize=6.6, color="white")
+        ax.text(pA[0] + pA[2] / 2, by - 0.09, "Stratified 80/20 split and five folds fixed with a seed before training",
+                ha="center", va="center", fontsize=6.1, style="italic", color="#555555")
+        sw = 1.02; sg = (pA[2] - 0.24 - 3 * sw) / 2; sy, sh = pA[1] + 0.08, 0.48
+        A3 = [("Model selection", ["5 learners, 86 settings", "5-fold CV by AUROC"]),
+              ("Locked model", ["RBF SVM, C = 1", "fixed threshold 0.50"]),
+              ("Single test", [f"{a_test[0]} / {a_test[1]} children", "evaluated once"])]
+        ax_ = [pA[0] + 0.12 + i * (sw + sg) for i in range(3)]
+        for x, (t, l) in zip(ax_, A3):
+            box(x, sy, sw, sh, t, l, ls=6.3, ts=7)
+        for i in range(2):
+            arrow(ax_[i] + sw, sy + sh / 2, ax_[i + 1], sy + sh / 2)
+        # arm B
+        ax.add_patch(FancyBboxPatch(pB[:2], pB[2], pB[3], boxstyle="round,pad=0,rounding_size=0.05", fc=GREENF, ec="#93bba3", lw=0.9))
+        ax.text(pB[0] + 0.10, pB[1] + pB[3] - 0.12, "B. Leave-one-school-out validation", fontsize=7.6, fontweight="bold", color=GREEN, va="center")
+        ax.text(pB[0] + 0.10, pB[1] + pB[3] - 0.29, "Hyper-parameters locked from arm A", fontsize=6.1, style="italic", color="#555555", va="center")
+        g0x, g0y = pB[0] + 0.30, pB[1] + 0.07
+        cs = 0.612 / n_sch
+        for i in range(n_sch):
+            for j in range(n_sch):
+                ax.add_patch(Rectangle((g0x + j * cs, g0y + (n_sch - 1 - i) * cs), cs * 0.92, cs * 0.92,
+                                       fc=GREEN if i == j else "#d3e6da", ec="none"))
+        ax.text(g0x + n_sch * cs / 2, g0y + n_sch * cs + 0.06, f"Schools S01 to S{n_sch:02d}", ha="center", va="center", fontsize=6.1, color="#555555")
+        ax.text(g0x - 0.09, g0y + n_sch * cs / 2, f"Folds 1 to {n_sch}", rotation=90, ha="center", va="center", fontsize=6.1, color="#555555")
+        lx = g0x + n_sch * cs + 0.12
+        ax.add_patch(Rectangle((lx, g0y + 0.36), 0.08, 0.08, fc=GREEN, ec="none")); ax.text(lx + 0.12, g0y + 0.40, "left-out school", fontsize=6.3, va="center")
+        ax.add_patch(Rectangle((lx, g0y + 0.18), 0.08, 0.08, fc="#d3e6da", ec="none")); ax.text(lx + 0.12, g0y + 0.22, "training schools", fontsize=6.3, va="center")
+        rb_x = pB[0] + pB[2] - 1.30
+        box(rb_x, pB[1] + 0.46, 1.20, 0.44, "Refit per fold",
+            [f"on {n_sch - 1} schools", f"{len(bd) - sizes.max()} to {len(bd) - sizes.min()} children"], ls=6.3, ts=7)
+        box(rb_x, pB[1] + 0.05, 1.20, 0.34, "Pooled predictions", [f"out-of-fold, n = {len(bd)}"], ls=6.3, ts=7)
+        arrow(rb_x + 0.60, pB[1] + 0.46, rb_x + 0.60, pB[1] + 0.39)
+        # row 3: analyses
+        y3, h3 = 0.04, 0.52; aw = (W - 0.10 - 4 * 0.07) / 5; axs = [0.05 + i * (aw + 0.07) for i in range(5)]
+        A = [("Model versus AQ-10 rule", ["McNemar, child and school", "DeLong test, bootstrap CIs"]),
+             ("Lower cut-offs (post hoc)", ["score ≥ 5, matched specificity", "score ≥ 4 by Youden index"]),
+             ("Supplementary items", ["10 vs 14 items, same children", "pre-specified adoption rule"]),
+             ("Explanation and audit", ["Kernel SHAP, permutation", "importance, subgroups"]),
+             ("School effects (post hoc)", ["seen vs unseen schools,", "local children, nested tuning"])]
+        for x, (t, l) in zip(axs, A):
+            box(x, y3, aw, h3, t, l, ls=6.1, ts=6.8)
+        yA = 0.80
+        line([pA[0] + pA[2] / 2, pA[0] + pA[2] / 2], [pA[1], yA + 0.07], BLUE)
+        line([axs[0] + aw * 0.35, pA[0] + pA[2] / 2], [yA + 0.07, yA + 0.07], BLUE)
+        arrow(axs[0] + aw * 0.35, yA + 0.07, axs[0] + aw * 0.35, y3 + h3, BLUE)
+        bcx = pB[0] + pB[2] / 2
+        line([axs[0] + aw * 0.65, axs[4] + aw / 2], [yA, yA], GREEN); line([bcx, bcx], [pB[1], yA], GREEN)
+        for k, x in enumerate(axs):
+            xx = x + aw * 0.65 if k == 0 else x + aw / 2
+            arrow(xx, yA, xx, y3 + h3, GREEN)
+        os.makedirs(os.path.dirname(out_path), exist_ok=True)
+        fig.savefig(out_path, dpi=600)
 
 
 def ask_for_dataset(base):
@@ -147,6 +287,13 @@ def resolve(path):
 if __name__ == "__main__":
     if len(sys.argv) > 2:
         sys.exit(__doc__)
-    base = os.environ.get("AQ10_BASE", os.path.join(os.getcwd(), "work"))
+    base = os.environ.get("AQ10_BASE", os.path.join(HERE, "work"))
     source = sys.argv[1] if len(sys.argv) == 2 else ask_for_dataset(base)
-    build(resolve(source), base)
+    design = build(resolve(source), base)
+    try:                                             # in a notebook, show the figure below the cell
+        from IPython import get_ipython
+        if get_ipython() is not None:
+            from IPython.display import Image, display
+            display(Image(filename=design, width=900))
+    except ImportError:
+        pass
