@@ -136,7 +136,7 @@ def auc(yt, s):
 
 
 def cluster_boot(stat, idx=IDX, sp=SP, mn=MN, B=2000, seed=SEED):
-    """95% percentile interval; special and mainstream schools resampled separately, with replacement."""
+    """95% percentile interval; ASD and mainstream schools resampled separately, with replacement."""
     rng_b = np.random.default_rng(seed)
     vals = []
     for _ in range(B):
@@ -202,7 +202,7 @@ def write_report(section_lines):
 
 
 print(f"Project: {PROJECT}")
-print(f"{len(bd)} children | {len(SP)} special and {len(MN)} mainstream schools | test set {len(test)}")
+print(f"{len(bd)} children | {len(SP)} ASD and {len(MN)} mainstream schools | test set {len(test)}")
 
 # ══════════════════════════════════════════════════════════════════════════════
 # A. REPRODUCE THE LOCKED LEAVE-ONE-SCHOOL-OUT RUN
@@ -230,7 +230,7 @@ prof = []
 for s in SP + MN:
     g = bd[bd.school_id == s]
     q1 = g.Q1.value_counts(normalize=True)
-    prof.append({"school": CODE[s], "group": "special" if s in SP else "mainstream", "n": len(g),
+    prof.append({"school": CODE[s], "group": "ASD" if s in SP else "mainstream", "n": len(g),
                  "age_mean": g.Age.mean(), "boys_pct": 100 * (g.sex == "m").mean(),
                  "AQ_total_mean": g.total.mean(), "AQ_total_sd": g.total.std(),
                  "rule_positive_pct": 100 * g.rule.mean(), "svm_flagged_pct": 100 * g.f_lock.mean(),
@@ -255,7 +255,7 @@ fig, ax = plt.subplots(figsize=(8.5, 6))
 im = ax.imshow(100 * dev.values.astype(float), cmap="RdBu_r", vmin=-40, vmax=40, aspect="auto")
 ax.set_xticks(range(10)); ax.set_xticklabels(RAW)
 ax.set_yticks(range(len(order)))
-ax.set_yticklabels([f"{CODE[s]} ({'special' if s in SP else 'mainstream'})" for s in SP + MN])
+ax.set_yticklabels([f"{CODE[s]} ({'ASD' if s in SP else 'mainstream'})" for s in SP + MN])
 for i in range(len(order)):
     for j in range(10):
         ax.text(j, i, f"{100 * endorse.values[i, j]:.0f}", ha="center", va="center", fontsize=7)
@@ -283,7 +283,7 @@ def perm_v(sub, item, n_perm=2000):
     return obs, (1 + (null >= obs - 1e-12).sum()) / (n_perm + 1)
 
 
-SETS = {"special": bd[bd.label == 1], "mainstream": bd[bd.label == 0], "mainstream_without_S06": bd[(bd.label == 0) & ~S06]}
+SETS = {"ASD": bd[bd.label == 1], "mainstream": bd[bd.label == 0], "mainstream_without_S06": bd[(bd.label == 0) & ~S06]}
 rows = []
 for it in RAW:
     row = {"item": it, "V_answer_by_group": cramers_v(bd.label.values, bd[it].values.astype(int) - 1)}
@@ -296,10 +296,10 @@ for nm in SETS:
 save(B2.round(4), "T_s5_B2_item_by_school.csv")
 R += ["", "### B2. Does each answer depend on the school within each group? (T_s5_B2_item_by_school.csv)", "",
       "Cramer's V for answer (4 levels) by school within a group; p from 2,000 shuffles of school within the group, "
-      "Holm-adjusted over the ten items. V for answer by group (special vs mainstream) is shown for comparison.", "",
-      "| Item | V by group | V school (special) | p Holm | V school (mainstream) | p Holm | V school (mainstream without S06) | p Holm |",
+      "Holm-adjusted over the ten items. V for answer by group (ASD vs mainstream) is shown for comparison.", "",
+      "| Item | V by group | V school (ASD) | p Holm | V school (mainstream) | p Holm | V school (mainstream without S06) | p Holm |",
       "|---|---|---|---|---|---|---|---|"]
-R += [f"| {r.item} | {r.V_answer_by_group:.2f} | {r.V_special:.2f} | {pfmt(r.p_holm_special)} | {r.V_mainstream:.2f} | "
+R += [f"| {r.item} | {r.V_answer_by_group:.2f} | {r.V_ASD:.2f} | {pfmt(r.p_holm_ASD)} | {r.V_mainstream:.2f} | "
       f"{pfmt(r.p_holm_mainstream)} | {r.V_mainstream_without_S06:.2f} | {pfmt(r.p_holm_mainstream_without_S06)} |"
       for r in B2.itertuples()]
 
@@ -323,12 +323,12 @@ for v in VARS:
 B3 = pd.DataFrame(rows)
 save(B3.round(4), "T_s5_B3_icc_by_school.csv")
 R += ["", "### B3. Share of variance between schools, within each group (ICC(1); T_s5_B3_icc_by_school.csv)", "",
-      "| Variable | ICC special | p | ICC mainstream | p | ICC mainstream without S06 | p |", "|---|---|---|---|---|---|---|"]
-R += [f"| {r.variable} | {f3(r.ICC_special)} | {pfmt(r.p_special)} | {f3(r.ICC_mainstream)} | {pfmt(r.p_mainstream)} | "
+      "| Variable | ICC ASD | p | ICC mainstream | p | ICC mainstream without S06 | p |", "|---|---|---|---|---|---|---|"]
+R += [f"| {r.variable} | {f3(r.ICC_ASD)} | {pfmt(r.p_ASD)} | {f3(r.ICC_mainstream)} | {pfmt(r.p_mainstream)} | "
       f"{f3(r.ICC_mainstream_without_S06)} | {pfmt(r.p_mainstream_without_S06)} |" for r in B3.itertuples()]
 fig, ax = plt.subplots(figsize=(10, 4))
 xx = np.arange(len(B3)); w = 0.27
-for k, (nm, col) in enumerate((("special", "#c0504d"), ("mainstream", "#4f81bd"), ("mainstream_without_S06", "#9bbb59"))):
+for k, (nm, col) in enumerate((("ASD", "#c0504d"), ("mainstream", "#4f81bd"), ("mainstream_without_S06", "#9bbb59"))):
     ax.bar(xx + (k - 1) * w, B3[f"ICC_{nm}"].clip(lower=0), w, label=nm.replace("_", " "), color=col)
 ax.set_xticks(xx); ax.set_xticklabels(B3.variable, rotation=45, ha="right"); ax.set_ylabel("ICC(1)")
 ax.legend(); ax.set_title("Variance between schools within each group")
@@ -340,13 +340,13 @@ svm_only = miss & (bd.f_lock.values == 1); neither = miss & (bd.f_lock.values ==
 E = ERSV
 auc_e = auc(y, E); ci_e = cluster_boot(lambda ii: auc(y[ii], E[ii]))
 R += ["", "### B4. Rater response style: share of 'definitely' answers (ERS)", "",
-      f"- ERS mean: special {E[y == 1].mean():.3f}, mainstream {E[y == 0].mean():.3f} "
+      f"- ERS mean: ASD {E[y == 1].mean():.3f}, mainstream {E[y == 0].mean():.3f} "
       f"(Mann-Whitney p = {pfmt(stats.mannwhitneyu(E[y == 1], E[y == 0]).pvalue)}).",
       f"- ERS alone as a score separates the groups with AUROC {auc_e:.3f} {ci(ci_e)} (school-clustered interval).",
       f"- Mainstream children: false positives {E[fp_mask].mean():.3f} (n = {fp_mask.sum()}) vs true negatives {E[tn_mask].mean():.3f} "
       f"(p = {pfmt(stats.mannwhitneyu(E[fp_mask], E[tn_mask]).pvalue)}); S06 {E[S06].mean():.3f} vs other mainstream {E[OTHER_MN].mean():.3f} "
       f"(p = {pfmt(stats.mannwhitneyu(E[S06], E[OTHER_MN]).pvalue)}).",
-      f"- Special-school children scoring below 6: found by the SVM only {E[svm_only].mean():.3f} (n = {svm_only.sum()}) vs missed by both "
+      f"- ASD-school children scoring below 6: found by the SVM only {E[svm_only].mean():.3f} (n = {svm_only.sum()}) vs missed by both "
       f"{E[neither].mean():.3f} (n = {neither.sum()}; p = {pfmt(stats.mannwhitneyu(E[svm_only], E[neither]).pvalue)})."]
 
 
@@ -362,7 +362,7 @@ def school_cv(X, lab, repeats, seed):
 
 
 rows = []
-for gname, gmask in (("special", y == 1), ("mainstream", y == 0)):
+for gname, gmask in (("ASD", y == 1), ("mainstream", y == 0)):
     sub = bd[gmask]
     lab, uniq = pd.factorize(sub.school_id)
     for fname, cols in (("10 items", AQ), ("9 items without Q1", AQ[1:])):
@@ -396,7 +396,7 @@ for s in SP + MN:
         keep = (a_c + b_c) > 0
         tvd = 0.5 * np.abs(a_c / a_c.sum() - b_c / b_c.sum()).sum()
         p = stats.chi2_contingency(np.vstack([a_c[keep], b_c[keep]]))[1] if keep.sum() > 1 else 1.0
-        rows.append({"school": CODE[s], "group": "special" if s in SP else "mainstream", "item": it, "TVD": tvd, "chi2_p": p})
+        rows.append({"school": CODE[s], "group": "ASD" if s in SP else "mainstream", "item": it, "TVD": tvd, "chi2_p": p})
 B6 = pd.DataFrame(rows)
 B6["p_bonferroni"] = np.minimum(1, B6.chi2_p * len(B6))
 save(B6.round(5), "T_s5_B6_item_drift_by_school.csv")
@@ -422,7 +422,7 @@ ho = {**rates(test.label.values, test.pred_Mstar.values), "AUROC": auc(test.labe
 rows = []
 for s in SP + MN:
     ii = IDX[s]; tt = (test.school_id == s).values
-    rows.append({"school": CODE[s], "group": "special" if s in SP else "mainstream", "n": len(ii),
+    rows.append({"school": CODE[s], "group": "ASD" if s in SP else "mainstream", "n": len(ii),
                  "flagged_pct_LOSO_unseen": 100 * bd.f_lock.values[ii].mean(),
                  "flagged_pct_randomCV_seen": 100 * (P[:, ii] >= .5).mean(),
                  "holdout_n": int(tt.sum()), "holdout_flagged": int(test.pred_Mstar.values[tt].sum())})
@@ -450,7 +450,7 @@ for s in SCHOOLS:
             train = ~(bd.school_id.values == s); train[add] = True
             test_m = np.zeros(843, bool); test_m[rest] = True
             p = fit_predict(train, test_m)
-            rows.append({"school": CODE[s], "group": "special" if s in SP else "mainstream", "k": k, "rep": r,
+            rows.append({"school": CODE[s], "group": "ASD" if s in SP else "mainstream", "k": k, "rep": r,
                          "n_rest": len(rest), "n_flagged": int((p >= .5).sum())})
 C2 = pd.DataFrame(rows)
 C2["flagged_pct"] = 100 * C2.n_flagged / C2.n_rest
@@ -465,7 +465,7 @@ R += ["", "### C2. Local adaptation: k children of the held-out school added to 
       "| k | Sensitivity, mean [range] | Specificity, mean [range] | S06 flagged %, mean |", "|---|---|---|---|",
       f"| 0 (LOSO) | {lo['Sens']:.3f} | {lo['Spec']:.3f} | {100 * bd.f_lock.values[S06].mean():.1f} |"]
 for k in KS:
-    se = summ[(summ.k == k) & (summ.group == "special")].iloc[0]; mn_ = summ[(summ.k == k) & (summ.group == "mainstream")].iloc[0]
+    se = summ[(summ.k == k) & (summ.group == "ASD")].iloc[0]; mn_ = summ[(summ.k == k) & (summ.group == "mainstream")].iloc[0]
     s06k = C2[(C2.school == "S06") & (C2.k == k)].flagged_pct.mean()
     R += [f"| {k} | {se['mean']:.3f} [{se['min']:.3f} to {se['max']:.3f}] | {1 - mn_['mean']:.3f} [{1 - mn_['max']:.3f} to {1 - mn_['min']:.3f}] | {s06k:.1f} |"]
 
@@ -476,14 +476,14 @@ for a in SP:
         p = fit_predict(~held, held)
         yy, tt = y[held], bd.total.values[held]
         rs, rr = rates(yy, p >= .5), rates(yy, tt >= 6)
-        rows.append({"special": CODE[a], "mainstream": CODE[b], "n": int(held.sum()),
+        rows.append({"ASD": CODE[a], "mainstream": CODE[b], "n": int(held.sum()),
                      "AUROC_svm": auc(yy, p), "AUROC_total": auc(yy, tt),
                      "Sens_svm": rs["Sens"], "Spec_svm": rs["Spec"], "Sens_rule": rr["Sens"], "Spec_rule": rr["Spec"]})
 C3 = pd.DataFrame(rows)
 save(C3.round(4), "T_s5_C3_leave_pair_out.csv")
 q = lambda v: f"{np.median(v):.3f} [IQR {np.percentile(v, 25):.3f} to {np.percentile(v, 75):.3f}; range {np.min(v):.3f} to {np.max(v):.3f}]"
 w06 = C3.mainstream == "S06"
-R += ["", "### C3. Leave one special and one mainstream school out together (35 test folds with both groups)", "",
+R += ["", "### C3. Leave one ASD and one mainstream school out together (35 test folds with both groups)", "",
       f"- AUROC SVM: {q(C3.AUROC_svm)}; AUROC total score: {q(C3.AUROC_total)}; SVM higher in {(C3.AUROC_svm > C3.AUROC_total).sum()} of 35.",
       f"- Sensitivity SVM: {q(C3.Sens_svm)}; rule: {q(C3.Sens_rule)}; SVM higher in {(C3.Sens_svm > C3.Sens_rule).sum()} of 35.",
       f"- Specificity SVM: {q(C3.Spec_svm)}; rule: {q(C3.Spec_rule)}; SVM lower in {(C3.Spec_svm < C3.Spec_rule).sum()} of 35.",
@@ -495,7 +495,7 @@ axs[0].plot(lim, lim, "k--", lw=0.8); axs[0].set_xlabel("AUROC, AQ-10 total"); a
 axs[1].scatter(C3.Spec_svm[~w06], C3.Sens_svm[~w06], label="SVM, other pairs"); axs[1].scatter(C3.Spec_svm[w06], C3.Sens_svm[w06], label="SVM, pairs with S06")
 axs[1].scatter(C3.Spec_rule, C3.Sens_rule, marker="s", label="rule (S >= 6)", alpha=0.6)
 axs[1].set_xlabel("Specificity"); axs[1].set_ylabel("Sensitivity"); axs[1].legend(fontsize=8)
-fig.suptitle("Leave one special and one mainstream school out (35 folds)")
+fig.suptitle("Leave one ASD and one mainstream school out (35 folds)")
 savefig(fig, "F_s5_C3_leave_pair_out.png")
 
 fig, ax = plt.subplots(figsize=(10, 4))
@@ -528,32 +528,32 @@ def predict_with(j, value):
 
 
 rows = [{"item1_answer": "as given", "flagged_of_the_S06_flagged": int(flag06.sum()), "S06_flagged": int(f_ref[S06].sum()),
-         "other_mainstream_flagged_pct": 100 * f_ref[OTHER_MN].mean(), "special_flagged_pct": 100 * f_ref[y == 1].mean()}]
+         "other_mainstream_flagged_pct": 100 * f_ref[OTHER_MN].mean(), "ASD_flagged_pct": 100 * f_ref[y == 1].mean()}]
 for v in (3, 2, 1, 0):
     fv = predict_with(0, v) >= .5
     rows.append({"item1_answer": Q1_ANSWER[v], "flagged_of_the_S06_flagged": int((fv & flag06).sum()), "S06_flagged": int(fv[S06].sum()),
-                 "other_mainstream_flagged_pct": 100 * fv[OTHER_MN].mean(), "special_flagged_pct": 100 * fv[y == 1].mean()})
+                 "other_mainstream_flagged_pct": 100 * fv[OTHER_MN].mean(), "ASD_flagged_pct": 100 * fv[y == 1].mean()})
 D1 = pd.DataFrame(rows)
 save(D1.round(2), "T_s5_D1_item1_counterfactual.csv")
 R += ["### D1. Counterfactual: every child's answer to item 1 replaced, all other answers kept", "",
-      f"| Item 1 answer | Still flagged, of the {int(flag06.sum())} S06 children | S06 flagged, of 63 | Other mainstream flagged % | Special flagged % |",
+      f"| Item 1 answer | Still flagged, of the {int(flag06.sum())} S06 children | S06 flagged, of 63 | Other mainstream flagged % | ASD flagged % |",
       "|---|---|---|---|---|"]
-R += [f"| {r.item1_answer} | {r.flagged_of_the_S06_flagged} | {r.S06_flagged} | {r.other_mainstream_flagged_pct:.1f} | {r.special_flagged_pct:.1f} |"
+R += [f"| {r.item1_answer} | {r.flagged_of_the_S06_flagged} | {r.S06_flagged} | {r.other_mainstream_flagged_pct:.1f} | {r.ASD_flagged_pct:.1f} |"
       for r in D1.itertuples()]
 
 rows, ice = [], []
 fig, axs = plt.subplots(2, 5, figsize=(14, 5.5), sharey=True)
 for j, a in enumerate(AQ):
     probs = np.vstack([predict_with(j, v) for v in range(4)])
-    for gname, gmask in (("special", y == 1), ("mainstream", y == 0), ("all", ALL)):
+    for gname, gmask in (("ASD", y == 1), ("mainstream", y == 0), ("all", ALL)):
         curve = probs[:, gmask].mean(1)
         rows.append({"item": RAW[j], "group": gname, **{f"mean_p_aligned_{v}": curve[v] for v in range(4)},
                      "monotone_increasing": bool(np.all(np.diff(curve) >= -0.005))})
     dec = (np.diff(probs, axis=0) < -0.01).any(axis=0)
     ice.append({"item": RAW[j], "pct_children_with_a_decrease_all": 100 * dec.mean(),
-                "pct_special": 100 * dec[y == 1].mean(), "pct_mainstream": 100 * dec[y == 0].mean()})
+                "pct_ASD": 100 * dec[y == 1].mean(), "pct_mainstream": 100 * dec[y == 0].mean()})
     ax = axs.ravel()[j]
-    ax.plot(range(4), probs[:, y == 1].mean(1), "o-", color="#c0504d", label="special")
+    ax.plot(range(4), probs[:, y == 1].mean(1), "o-", color="#c0504d", label="ASD")
     ax.plot(range(4), probs[:, y == 0].mean(1), "o-", color="#4f81bd", label="mainstream")
     ax.set_title(RAW[j]); ax.set_xticks(range(4))
 axs[0, 0].legend(fontsize=8)
@@ -577,17 +577,17 @@ rows = []
 for h in SCHOOLS:
     tr = bd.school_id.values != h
     n_sp, n_mn = int((tr & dd & (y == 1)).sum()), int((tr & dd & (y == 0)).sum())
-    rows.append({"held_out": CODE[h], "train_Q1_def_disagree_special": n_sp, "train_Q1_def_disagree_mainstream": n_mn,
-                 "P_special_given_Q1_def_disagree": n_sp / (n_sp + n_mn) if n_sp + n_mn else np.nan,
+    rows.append({"held_out": CODE[h], "train_Q1_def_disagree_ASD": n_sp, "train_Q1_def_disagree_mainstream": n_mn,
+                 "P_ASD_given_Q1_def_disagree": n_sp / (n_sp + n_mn) if n_sp + n_mn else np.nan,
                  "held_out_Q1_def_disagree": int((~tr & dd).sum())})
 D3 = pd.DataFrame(rows)
 save(D3.round(4), "T_s5_D3_training_composition.csv")
 r06 = D3[D3.held_out == "S06"].iloc[0]
 by_sp = {CODE[s]: int((dd & (bd.school_id.values == s)).sum()) for s in SP}
 R += ["", "### D3. What the training data taught about item 1 (T_s5_D3_training_composition.csv)", "",
-      f"- When S06 was held out, 'definitely disagree' to item 1 appeared for {r06.train_Q1_def_disagree_special} special-school and "
-      f"{r06.train_Q1_def_disagree_mainstream} mainstream children in training, so P(special | that answer) = {r06.P_special_given_Q1_def_disagree:.3f}.",
-      f"- 'Definitely disagree' to item 1 by special school: {by_sp}."]
+      f"- When S06 was held out, 'definitely disagree' to item 1 appeared for {r06.train_Q1_def_disagree_ASD} ASD-school and "
+      f"{r06.train_Q1_def_disagree_mainstream} mainstream children in training, so P(ASD | that answer) = {r06.P_ASD_given_Q1_def_disagree:.3f}.",
+      f"- 'Definitely disagree' to item 1 by ASD school: {by_sp}."]
 
 base = {s: f_ref[IDX[s]].mean() for s in SCHOOLS}
 codes = [CODE[s] for s in SCHOOLS]
@@ -603,13 +603,13 @@ for h in SCHOOLS:
 infl.index.name = infl_n.index.name = "held_out_school"
 save(infl.round(2).reset_index(), "T_s5_D4_training_school_influence_pp.csv")
 save(infl_n.reset_index(), "T_s5_D4_training_school_influence_counts.csv")
-top3 = sorted(SP, key=lambda s: -dd[IDX[s]].mean())[:3]      # special schools with the highest share of 'definitely disagree'
+top3 = sorted(SP, key=lambda s: -dd[IDX[s]].mean())[:3]      # ASD schools with the highest share of 'definitely disagree'
 p_wo = fit_predict(~S06 & ~bd.school_id.isin(top3).values, S06)
 R += ["", "### D4. Which training school taught the pattern? (one training school removed at a time; T_s5_D4_*.csv)", "",
       "Entries are the change in the held-out school's flag rate, in percentage points, when one training school is removed.", "",
       f"- S06 (baseline {int(f_ref[S06].sum())} of 63 flagged): " +
       ", ".join(f"without {c} {int(v)}" for c, v in infl_n.loc["S06"].dropna().items()) + ".",
-      f"- Without the three special schools with the most 'definitely disagree' answers to item 1 ({', '.join(CODE[s] for s in top3)}): "
+      f"- Without the three ASD schools with the most 'definitely disagree' answers to item 1 ({', '.join(CODE[s] for s in top3)}): "
       f"{int((p_wo >= .5).sum())} of 63 flagged in S06.",
       "- Largest changes anywhere (held-out school, removed school, change in pp):"]
 stack = infl.stack().sort_values(key=np.abs, ascending=False).head(8)
@@ -660,7 +660,7 @@ R += [f"| {r.variable} | {r.S06_mean:.3f} | {r.other_mainstream_mean:.3f} | {r.r
 fl, ru = bd.f_lock.values == 1, bd.rule.values == 1
 cats = {"both flag": fl & ru, "SVM only": fl & ~ru, "rule only": ~fl & ru, "neither": ~fl & ~ru}
 rows = []
-for gname, gmask in (("special", y == 1), ("mainstream", y == 0)):
+for gname, gmask in (("ASD", y == 1), ("mainstream", y == 0)):
     for cname, cm in cats.items():
         m = gmask & cm
         rows.append({"group": gname, "category": cname, "n": int(m.sum()), "ERS_mean": ERSV[m].mean() if m.any() else np.nan,

@@ -107,7 +107,7 @@ def auc(yt, s):
 
 
 def cluster_boot(stat, idx=IDX, sp=SP, mn=MN, B=2000, seed=SEED):
-    """95% percentile interval; special and mainstream schools resampled separately, with replacement."""
+    """95% percentile interval; ASD and mainstream schools resampled separately, with replacement."""
     rng_b = np.random.default_rng(seed)
     vals = []
     for _ in range(B):
@@ -183,13 +183,13 @@ COMP = [("Unseen schools: SVM vs rule (S>=6)", fl, (tot >= 6).astype(int), y, gr
         ("Hold-out: SVM vs rule (S>=6)", tt_f, (tt_tot >= 6).astype(int), tt_y, tt_g)]
 rows = []
 for name, fa, fb, yy, gg in COMP:
-    for sub, m in (("all children", np.ones(len(yy), bool)), ("special (sensitivity)", yy == 1), ("mainstream (specificity)", yy == 0)):
+    for sub, m in (("all children", np.ones(len(yy), bool)), ("ASD (sensitivity)", yy == 1), ("mainstream (specificity)", yy == 0)):
         rows.append({"comparison": name, "children": sub, **clustered_mcnemar(fa[m], fb[m], gg[m])})
 TA = pd.DataFrame(rows)
 save(TA.round(6), "T_s6_A_clustered_mcnemar.csv")
 R = ["## A. Paired decisions with the school as the unit (T_s6_A_clustered_mcnemar.csv)", "",
      "b = flagged by the first method only, c = by the second only. The exact sign-flip test uses school-level differences "
-     "(with 5 special schools its smallest possible p is 0.0625).", "",
+     "(with 5 ASD schools its smallest possible p is 0.0625).", "",
      "| Comparison | Children | b vs c | Schools b>c / b<c | p child-level | p clustered (Durkalski) | p exact sign-flip |", "|---|---|---|---|---|---|---|"]
 R += [f"| {r.comparison} | {r.children} | {r.b} vs {r.c} | {r.schools_b_gt_c} / {r.schools_b_lt_c} | {pfmt(r.p_child_level)} | "
       f"{pfmt(r.p_clustered_Durkalski)} | {pfmt(r.p_school_signflip_exact)} |" for r in TA.itertuples()]
@@ -213,7 +213,7 @@ for name, fn in stat_ho.items():
     rows.append({"metric": name, "estimate": fn(np.arange(len(test))), "school_clustered_lo": lohi[0], "school_clustered_hi": lohi[1]})
 TB = pd.DataFrame(rows)
 save(TB.round(4), "T_s6_B_holdout_school_clustered_ci.csv")
-R = [f"## B. Hold-out set with school-clustered intervals ({len(TSP)} special and {len(TMN)} mainstream schools; T_s6_B_*.csv)", ""]
+R = [f"## B. Hold-out set with school-clustered intervals ({len(TSP)} ASD and {len(TMN)} mainstream schools; T_s6_B_*.csv)", ""]
 R += [f"- {r.metric}: {r.estimate:.3f} [{r.school_clustered_lo:.3f}, {r.school_clustered_hi:.3f}]" for r in TB.itertuples()]
 write_report(R)
 

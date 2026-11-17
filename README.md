@@ -1,8 +1,8 @@
 # aq10-school-screening-code
 
-Analysis code for the paper _Machine Learning-Based School Screening for Autism Spectrum Disorder: A Multi-Center Study in Bangladesh_.
+Analysis code for the paper _Machine Learning on AQ-10 Child Responses: Agreement With ASD-School Placement and School-Level Response Patterns in Unseen Schools_.
 
-The study compares a support vector machine trained on the ten graded AQ-10 Child answers with the published cut-off (score ≥ 6) in 843 children aged 4 to 11 years from five ASD and seven mainstream schools in Bangladesh. The reference label is school placement. The model is tested once on a held-out set and then with leave-one-school-out validation.
+The study compares a support vector machine trained on the ten graded AQ-10 Child answers with the published cut-off (score ≥ 6) in 843 children aged 4 to 11 years from five ASD and seven mainstream schools in Bangladesh. The reference label is school placement. The model is tested once on a test set and then with leave-one-school-out validation.
 
 **To check a number in the paper, open [`results/paper_numbers.md`](results/paper_numbers.md).**
 
@@ -26,9 +26,11 @@ The questionnaire data are on Zenodo: **BD-AQ10**, version 1.0.0, [doi:10.5281/z
 | `pipeline/step6_robustness.py`                         | Run after RQ4. Paired tests and intervals with the school as the unit, SVM settings re-tuned inside every fold, and AQ-10 cut-offs 4 to 8                                                           |
 | `analysis/paper_numbers.py`                            | Writes `results/paper_numbers.md` from the locked-run outputs, including the post hoc analyses                                                                                                      |
 | `analysis/make_figure1.py`                             | Draws Fig. 1 (study design)                                                                                                                                                                         |
+| `analysis/make_figure_scores.py`                       | Draws Fig. 2 (AQ-10 total score by group, and children flagged by the SVM in unseen schools at each score)                                                                                          |
 | `config/`                                              | Locked split by coded child ID (`split_assignment.csv`), fold indices and Phase-0 settings                                                                                                          |
 | [`results/paper_numbers.md`](results/paper_numbers.md) | The numbers behind each table, figure and key claim in the paper, from the locked run                                                                                                               |
-| `results/report_step5.md`, `results/report_step6.md`   | Reports of steps 5 and 6 from the verified rerun (school codes only)                                                                                                                                |
+| [`results/school_effects_numbers.md`](results/school_effects_numbers.md) | Numbers behind Sections IV-G and IV-H and Table VI, from step 5 of the verified rerun (school codes only)                                                                          |
+| [`results/school_level_tests.md`](results/school_level_tests.md)         | School-clustered tests, AQ-10 cut-offs and nested tuning, from step 6 of the verified rerun                                                                                          |
 
 ## Reproducing the paper
 
@@ -47,9 +49,10 @@ python pipeline/rq4_explanation.py
 python pipeline/step5_school_effects.py
 python pipeline/step6_robustness.py
 python analysis/paper_numbers.py > my_paper_numbers.md
+python analysis/make_figure_scores.py fig2_scores.png
 ```
 
-If you leave out the path, `prepare_from_zenodo.py` asks for it; in a Colab notebook, `%run pipeline/prepare_from_zenodo.py` shows an upload button instead. Each step writes into `$AQ10_BASE/aq_10/` and checks that the previous step finished. Steps 5 and 6 were added after the locked run to examine the school effects seen in RQ2; they use the locked SVM settings and predictions and write `step5_school_effects/` and `step6_robustness/`, each with a `report_step5.md` or `report_step6.md`. Compare `my_paper_numbers.md` with [`results/paper_numbers.md`](results/paper_numbers.md). Never commit the working folder.
+If you leave out the path, `prepare_from_zenodo.py` asks for it; in a Colab notebook, `%run pipeline/prepare_from_zenodo.py` shows an upload button instead. Each step writes into `$AQ10_BASE/aq_10/` and checks that the previous step finished. Steps 5 and 6 were added after the locked run to examine the school effects seen in RQ2; they use the locked SVM settings and predictions and write `step5_school_effects/` and `step6_robustness/`, each with a `report_step5.md` or `report_step6.md`. Compare `my_paper_numbers.md` with [`results/paper_numbers.md`](results/paper_numbers.md), and the two step reports with `results/school_effects_numbers.md` and `results/school_level_tests.md`, which keep only the numbers that the paper reports. Never commit the working folder.
 
 The locked run used Google Colab with scikit-learn 1.6.1, numpy 2.0.2, pandas 2.2.2 and shap 0.52.0. A rerun of the whole pipeline from `full_dataset.csv` on Google Colab (Python 3.13, scikit-learn 1.6.1, numpy 2.4.6, pandas 2.2.3, shap 0.54.1) reproduced every locked prediction of RQ1 to RQ3 and every SHAP value to within 10<sup>-14</sup>, and the refits in steps 5 and 6 and in `analysis/paper_numbers.py` reproduced all 843 locked leave-one-school-out decisions. scikit-learn is the version that matters; a different one can move a result in the last decimal place.
 
