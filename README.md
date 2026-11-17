@@ -31,11 +31,11 @@ You need only `full_dataset.csv`. Open a new notebook at [colab.research.google.
 
 Nothing is written to Google Drive. The notebook never mounts Drive: the code, the uploaded file and every output stay on the temporary Colab machine, which deletes them when the runtime ends. If the runtime disconnects before the last cell, start again from cell 1.
 
-**1. Get the code and the package versions.** The last line must print `scikit-learn 1.6.1`.
+**1. Get the code and the package versions.** The last line must print `scikit-learn 1.6.1`. The cell uses fixed paths, so running it again does no harm.
 
 ```python
-!test -d aq10-school-screening || git clone https://github.com/sayedio/aq10-school-screening.git
-%cd aq10-school-screening
+!test -d /content/aq10-school-screening || git clone https://github.com/sayedio/aq10-school-screening.git /content/aq10-school-screening
+%cd /content/aq10-school-screening
 !pip install -q -r requirements.txt
 import run_pipeline as rp
 !python -c "import sklearn; print('scikit-learn', sklearn.__version__)"
@@ -93,7 +93,7 @@ rp.run("step7", "collect")
 
 ```python
 from google.colab import files
-files.download("work/aq10_results.zip")
+files.download("/content/aq10-school-screening/work/aq10_results.zip")
 ```
 
 Then choose Runtime > Disconnect and delete runtime. This removes the uploaded data from the Colab machine at once.
