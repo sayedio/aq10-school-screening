@@ -2,8 +2,10 @@
 
 phase0_qc.py starts from the original school spreadsheets, which contain school
 names and are not shared. Approved users of the BD-AQ10 dataset
-(doi: 10.5281/zenodo.23988060) receive full_dataset.csv instead. This script turns
-that file into the exact inputs that rq1_baseline.py to rq4_explanation.py read:
+(doi: 10.5281/zenodo.23988059) receive full_dataset.csv instead, with every form
+received (863 children). Like phase0_qc.py, this script keeps the children aged
+4 to 11 (843) and turns them into the exact inputs that rq1_baseline.py to
+rq4_explanation.py read:
 
     <AQ10_BASE>/aq_10/data/processed/bd_clean.csv
     <AQ10_BASE>/aq_10/data/splits/train.csv      (development set, 674 children)
@@ -33,10 +35,7 @@ import sys
 import pandas as pd
 
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))   # repository root
-# Forms received and children excluded for age, from the Phase-0 log (phase0_qc.py). The Zenodo
-# file holds only the 843 children analysed, so these two counts cannot be recomputed from it.
-FORMS_RECEIVED = (419, 444)          # ASD schools, mainstream schools
-EXCLUDED_FOR_AGE = (16, 4)
+AGE_RANGE = (4, 11)                  # years, inclusive; the same exclusion as in phase0_qc.py
 FORWARD = ["Q1", "Q5", "Q7", "Q10", "SQ1", "SQ2", "SQ3"]
 REVERSE = ["Q2", "Q3", "Q4", "Q6", "Q8", "Q9", "SQ4"]
 AQ_ITEMS = [f"Q{i}" for i in range(1, 11)]
@@ -64,6 +63,13 @@ def build(full_dataset_csv, base):
     if unknown:
         sys.exit(f"Unexpected values in the group column: {unknown} (expected ASD or mainstream)")
     asd = group.isin(["asd", "special"])                  # ASD school; the file first uploaded said "special"
+
+    # Leave out children outside the study age range (20 forms, children aged 3 or 12)
+    in_range = z.age.between(*AGE_RANGE)
+    received = (int(asd.sum()), int((~asd).sum()))        # ASD schools, mainstream schools
+    excluded = (int((asd & ~in_range).sum()), int((~asd & ~in_range).sum()))
+    z, asd = z[in_range], asd[in_range]
+
     d = pd.DataFrame({
         "ID": z.child_id,
         "source_form": asd.map({True: "ASD.xlsx", False: "Normal.xlsx"}),
@@ -111,15 +117,17 @@ def build(full_dataset_csv, base):
     val = sorted(sum((folds[f"fold_{k}"]["val_indices"] for k in range(1, 6)), []))
     assert val == list(range(len(dev))), "fold indices do not cover the development set"
     print(f"Wrote {proj}")
+    print(f"  forms {sum(received)}, left out for age outside {AGE_RANGE[0]} to {AGE_RANGE[1]}: {sum(excluded)} "
+          f"(ASD school {excluded[0]}, mainstream {excluded[1]})")
     print(f"  children {len(bd)} (ASD school {int(bd.label.sum())}, mainstream {int((1 - bd.label).sum())})")
     print(f"  development {len(dev)}, test {len(test)}, AQ-10 rule positive {int(bd.AQ_rule_pred.sum())}")
     design = os.path.join(proj, "figures", "study_design.png")
-    draw_study_design(bd, dev, test, design)
+    draw_study_design(bd, dev, test, design, received, excluded)
     print(f"  [figure] {design}")
     return design
 
 
-def draw_study_design(bd, dev, test, out_path):
+def draw_study_design(bd, dev, test, out_path, received, excluded):
     """Study design, with the cohort counts taken from the data."""
     import logging
 
@@ -130,9 +138,6 @@ def draw_study_design(bd, dev, test, out_path):
     logging.getLogger("matplotlib.font_manager").setLevel(logging.ERROR)
     cnt = lambda d: (int(d.label.sum()), int((1 - d.label).sum()))
     a_all, a_dev, a_test = cnt(bd), cnt(dev), cnt(test)
-    if tuple(f - e for f, e in zip(FORMS_RECEIVED, EXCLUDED_FOR_AGE)) != a_all:
-        print("  WARNING: the Phase-0 counts in the study design do not match this file "
-              f"({FORMS_RECEIVED} - {EXCLUDED_FOR_AGE} vs {a_all}).")
     sizes = bd.school_id.value_counts()
     n_sch = len(sizes)
     n_asd_sch = bd.loc[bd.label == 1, "school_id"].nunique()
@@ -164,7 +169,7 @@ def draw_study_design(bd, dev, test, out_path):
         # row 1
         y1, h1 = 2.93, 0.50; bw = 1.27; gap = (W - 0.10 - 5 * bw) / 4; xs = [0.05 + i * (bw + gap) for i in range(5)]
         r1 = [(f"{words.get(n_sch, n_sch)} schools", ["Bangladesh", f"{n_asd_sch} ASD, {n_sch - n_asd_sch} mainstream"]),
-              ("Forms received", [f"n = {sum(FORMS_RECEIVED)}", f"{FORMS_RECEIVED[0]} / {FORMS_RECEIVED[1]}"]),
+              ("Forms received", [f"n = {sum(received)}", f"{received[0]} / {received[1]}"]),
               ("Analysis cohort", [f"n = {len(bd)}, aged {bd.Age.min()} to {bd.Age.max()}", f"{a_all[0]} / {a_all[1]}"]),
               ("Predictors", ["AQ-10 Child, Q1 to Q10", "aligned 0 to 3"]),
               ("Label (proxy) and rule", ["ASD-school placement", "AQ-10 score ≥ 6"])]
@@ -178,7 +183,7 @@ def draw_study_design(bd, dev, test, out_path):
         ex_x = xs[1] + bw + gap / 2; line([ex_x, ex_x], [y1 + h1 / 2, y1 - 0.17])
         box(ex_x - 0.62, y1 - 0.47, 1.24, 0.30, None,
             [f"Excluded: age outside {bd.Age.min()} to {bd.Age.max()}",
-             f"n = {sum(EXCLUDED_FOR_AGE)} ({EXCLUDED_FOR_AGE[0]} / {EXCLUDED_FOR_AGE[1]})"],
+             f"n = {sum(excluded)} ({excluded[0]} / {excluded[1]})"],
             fc="#f6f6f6", ec="#888888", dashed=True, ls=6.4)
         arrow(ex_x, y1 - 0.17, ex_x, y1 - 0.17)
         cx = xs[2] + bw / 2; yb = 2.28; line([cx, cx], [y1, yb])
