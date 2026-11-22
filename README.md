@@ -169,7 +169,7 @@ Figures:
 
 Code: MIT (see `LICENSE`). The English AQ-10 Child items are copyrighted by Allison, Auyeung and Baron-Cohen (2012).
 
-## How to cite for dataset only
+## How to cite
 
 Study: to be added after publication.
 Dataset: Sheikh, M. S., Munna, M. M. M., Habib, M. H. R., & Ahamed, M. S. (2026). _BD-AQ10: School-based AQ-10 Child data from ASD and mainstream schools in Bangladesh_ (Version 1.1.0) [Dataset]. Zenodo. https://doi.org/10.5281/zenodo.23988059
