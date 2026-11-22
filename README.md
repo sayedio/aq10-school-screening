@@ -25,7 +25,7 @@ RQ1 to RQ4 follow the analysis plan: the test split, the five folds and the deci
 
 The questionnaire data are on Zenodo: **BD-AQ10**, version 1.0.0, [doi:10.5281/zenodo.23988059](https://doi.org/10.5281/zenodo.23988059) (this DOI always leads to the latest version). The files are shared on request for non-commercial research. Approved users receive `full_dataset.csv`, which `pipeline/prepare_from_zenodo.py` turns into the exact inputs of the analysis. Its `group` column is `ASD` or `mainstream` (the first copies shared said `special` instead of `ASD`); the script accepts both.
 
-`full_dataset.csv` holds all 863 forms received. The script leaves out the 20 children aged 3 or 12 (16 from ASD schools, 4 from mainstream schools), the same exclusion as in the original cleaning step, and keeps the 843 children aged 4 to 11. Version 1.0.0 of the file held only these 843 children. It gives the same results, but the study design figure then shows no exclusions.
+`full_dataset.csv` holds all 863 forms received. The script leaves out the 20 children aged 3 or 12 (16 from ASD schools, 4 from mainstream schools), the same exclusion as in the original cleaning step, and keeps the 843 children aged 4 to 11.
 
 ## Run on Google Colab
 
