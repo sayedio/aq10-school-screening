@@ -1,8 +1,3 @@
-# Converted from v2_Thesis_phase_0.ipynb with outputs removed.
-# This script contains no data files. It needs the original school spreadsheets, which are not shared;
-# use pipeline/prepare_from_zenodo.py instead. Set AQ10_BASE to the folder that holds your private copy.
-# Do not commit CSV, XLSX, PDF, ZIP or joblib files.
-
 # ==============================================================================
 # BD-AQ10(+SQ4) MULTI-CENTER SCHOOL SCREENING
 # PHASE 0: DATA LOCK, CONSORT ATTRITION, SCHOOL-STRATIFIED 80/20 SPLIT,
