@@ -144,7 +144,7 @@ def print_locked_findings():
     print(f"Mean SHAP for item 1, definitely agree: {item1_shap.get(3, np.nan):+.3f}")
     print(f"Test-set logistic regression versus AQ-10 total score: DeLong p={logistic_p:.2f}")
     print(f"S07 false positives: {len(s07)}; also scoring 6 or more: {int((s07.AQ_score_legacy >= 6).sum())}; "
-          f"largest mean SHAP: {s07_means.index[0].replace('SHAP_A_', 'Q')} {s07_means.iloc[0]:+.2f}")
+          f"largest mean SHAP: {s07_means.index[0].replace('SHAP_A_', '')} {s07_means.iloc[0]:+.2f}")
     print(f"S06 item 1 SHAP rank: {s06_rank} (out of {len(items)})")
     print("Specificity check: all ten reported pairs involving S06 or S07 were below the AQ-10 rule.")
 

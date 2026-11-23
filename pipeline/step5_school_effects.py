@@ -371,11 +371,14 @@ for s in SP + MN:
         rows.append({"school": CODE[s], "group": "ASD" if s in SP else "mainstream", "item": it, "TVD": tvd, "chi2_p": p})
 B6 = pd.DataFrame(rows)
 B6["p_bonferroni"] = np.minimum(1, B6.chi2_p * len(B6))
+B6["rank_TVD"] = B6.TVD.rank(ascending=False, method="min").astype(int)
 save(B6.round(5), "T_s5_B6_item_drift_by_school.csv")
 top = B6.sort_values("TVD", ascending=False).head(10)
 R += ["", "### B6. Answer-distribution check per school and item (school vs the other schools of its group; T_s5_B6_item_drift_by_school.csv)", "",
       f"- {int((B6.p_bonferroni < 0.05).sum())} of {len(B6)} school-item pairs differ after Bonferroni correction. Largest total variation distances:"]
 R += [f"  - {r.school} ({r.group}) {r.item}: TVD {r.TVD:.2f}, Bonferroni p = {pfmt(r.p_bonferroni)}" for r in top.itertuples()]
+q = B6[(B6.school == "S06") & (B6.item == "Q1")].iloc[0]
+R += [f"  - S06 (mainstream) Q1: rank {int(q.rank_TVD)} of {len(B6)} by TVD (TVD {q.TVD:.2f}, Bonferroni p = {pfmt(q.p_bonferroni)})."]
 write_report(R + ["", f"(A and B took {time.time() - t0:.0f} s)"])
 
 # ══════════════════════════════════════════════════════════════════════════════
