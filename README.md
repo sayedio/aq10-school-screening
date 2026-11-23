@@ -102,6 +102,14 @@ Then choose Runtime > Disconnect and delete runtime. This removes the uploaded d
 
 `rp.run("all")` runs cells 3 to 9 in one cell instead.
 
+The command-line runner and the notebook calls use the same preparation and analysis scripts in
+the same order. The command `python run_pipeline.py all --data path/to/full_dataset.csv` also runs
+the preparation step; `rp.run("all")` assumes that preparation was already completed. The command
+line shows live child-process output and timing, while the notebook additionally displays figures.
+After step 7, both forms print the locked findings that are not included in the ordinary notebook
+output, including the response-pattern, correlation, SHAP, logistic-regression, S06 and S07
+summaries.
+
 **How long it takes.** About an hour in all on a free Colab CPU runtime; RQ4 takes about half of it. Each step prints how long it usually takes. During a long calculation that prints nothing, a line such as `rq4 is still running: 12 min so far` appears every two minutes. As a safeguard, a step is stopped with a message if it runs about five times longer than usual; the results of the earlier steps are kept, and `rp.run("rq4", max_minutes=300)` gives a slow machine more time. Interrupting a cell also stops the step it started, so nothing keeps running in the background.
 
 ## Run on your own computer
@@ -154,14 +162,14 @@ Figures:
 - Every random step uses the seed 42. The test split and the five folds are stored by coded child ID in `config/split_assignment.csv` and `config/cv_fold_indices.json`, so every run uses the same rows in the same order.
 - scikit-learn decides the model results and is pinned to 1.6.1, the version of the original run. A different version can move a result in the last decimal place. The original run used Google Colab with scikit-learn 1.6.1, numpy 2.0.2, pandas 2.2.2 and shap 0.52.0. A rerun on Google Colab with Python 3.13, scikit-learn 1.6.1, numpy 2.4.6, pandas 2.2.3 and shap 0.54.1 reproduced every prediction of RQ1 to RQ3 and every SHAP value to within 10<sup>-14</sup>. Steps 5 and 7 refit the leave-one-school-out model and report how many of the 843 decisions of RQ2 they reproduce; in that rerun, all 843 were reproduced.
 - `versions.txt` in the zip file records the versions and the code commit of each run.
-- `pipeline/phase0_qc.py` is the original cleaning step (exclusions, aligned 0 to 3 coding, split and folds). It needs the original school spreadsheets, which are not shared because they contain school names; `pipeline/prepare_from_zenodo.py` rebuilds its outputs from the Zenodo file.
+- `pipeline/prepare_from_zenodo.py` rebuilds the locked cleaning outputs from the Zenodo file. The original spreadsheet cleaner is not included because those spreadsheets contain school names.
 
 ## Repository contents
 
 | File               | Purpose                                                                                                                |
 | ------------------ | ---------------------------------------------------------------------------------------------------------------------- |
 | `run_pipeline.py`  | Runs the steps in order, keeps a log of each, shows the figures in a notebook and collects the results in one zip file |
-| `pipeline/`        | The scripts of the analysis steps listed above                                                                         |
+| `pipeline/`        | The preparation and analysis scripts listed above                                                                       |
 | `config/`          | The locked split by coded child ID, the fold indices and the settings of the cleaning step                             |
 | `requirements.txt` | Package requirements                                                                                                   |
 

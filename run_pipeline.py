@@ -48,9 +48,6 @@ STEPS = {
     "step7": ("pipeline/step7_summary.py", "Step 7: summary of all steps as CSV files"),
 }
 ORDER = list(STEPS) + ["collect"]
-# Minutes: (usual time on a free Colab CPU runtime, limit after which the step is stopped).
-# No step can loop forever, but a stuck process would otherwise wait without end; the limit is
-# about five times the usual time. --max-minutes (or max_minutes=) changes it.
 TIMING = {"prepare": (1, 10), "rq1": (6, 45), "rq2": (1, 15), "rq3": (1, 15), "rq4": (30, 150),
           "step5": (10, 60), "step6": (20, 120), "step7": (3, 30)}
 QUIET_MINUTES = 2          # print a "still running" line after this long without output
@@ -65,8 +62,94 @@ class StepError(RuntimeError):
     """A step failed or ran past its time limit."""
 
 
+def _delong_pvalue(y_true, first, second):
+    """Return the paired DeLong p-value used for the locked comparisons."""
+    import numpy as np
+    from scipy import stats
+
+    y_true = np.asarray(y_true)
+    pos, neg = np.where(y_true == 1)[0], np.where(y_true == 0)[0]
+    m, n = len(pos), len(neg)
+    scores = np.vstack([first, second]).astype(float)
+
+    def midranks(values):
+        order = np.argsort(values)
+        ranks = np.empty(len(values), float)
+        i = 0
+        while i < len(values):
+            j = i + 1
+            while j < len(values) and values[order[j]] == values[order[i]]:
+                j += 1
+            ranks[order[i:j]] = (i + j + 1) / 2
+            i = j
+        return ranks
+
+    tx = np.array([midranks(row[pos]) for row in scores])
+    ty = np.array([midranks(row[neg]) for row in scores])
+    tz = np.array([midranks(np.concatenate([row[pos], row[neg]])) for row in scores])
+    aucs = tz[:, :m].sum(axis=1) / m / n - (m + 1) / (2 * n)
+    v01 = (tz[:, :m] - tx) / n
+    v10 = 1 - (tz[:, m:] - ty) / m
+    covariance = np.cov(v01) / m + np.cov(v10) / n
+    contrast = np.array([1, -1])
+    variance = contrast @ covariance @ contrast
+    if variance == 0:
+        return 1.0
+    z = (aucs[0] - aucs[1]) / np.sqrt(variance)
+    return float(2 * stats.norm.sf(abs(z)))
+
+
+def print_locked_findings():
+    """Print the additional locked-run findings not shown by the step scripts."""
+    import numpy as np
+    import pandas as pd
+
+    root = os.path.join(PROJECT)
+    data = pd.read_csv(os.path.join(root, "data", "processed", "bd_clean.csv"))
+    items = [f"A_Q{i}" for i in range(1, 11)]
+    alpha_items = data[items].astype(float)
+    alpha = len(items) / (len(items) - 1) * (
+        1 - alpha_items.var(ddof=1).sum() / alpha_items.sum(axis=1).var(ddof=1)
+    )
+    patterns = data.groupby("label")[items].apply(lambda frame: set(map(tuple, frame.to_numpy())))
+    shared = len(patterns.loc[1] & patterns.loc[0])
+    total_patterns = len(patterns.loc[1] | patterns.loc[0])
+    corr = alpha_items.corr()
+    pairs = [(abs(corr.iloc[i, j]), corr.index[i], corr.index[j], corr.iloc[i, j])
+             for i in range(len(items)) for j in range(i)]
+    max_corr, first_item, second_item, signed_corr = max(pairs)
+    item1_negative = bool((corr.loc["A_Q1", [c for c in items if c != "A_Q1"]] < 0).all())
+
+    shap = pd.read_csv(os.path.join(root, "rq4", "tables", "T_rq4_shap_values_per_instance.csv"))
+    item1_shap = shap.groupby("feat_A_Q1")["SHAP_A_Q1"].mean()
+    test = pd.read_csv(os.path.join(root, "rq1_baseline", "predictions", "test_predictions.csv"))
+    logistic_p = _delong_pvalue(test.label, test.prob_LR, test.AQ_score_legacy)
+    loso = pd.read_csv(os.path.join(root, "rq2_loso", "predictions", "rq2_loso_s0_predictions.csv"))
+    loso["rule"] = (loso.AQ_score_legacy >= 6).astype(int)
+    s07 = loso[(loso.school_id == "SCH_007") & (loso.label == 0) & (loso.y_pred == 1)]
+    s07_shap = shap[shap.ID.isin(s07.ID)]
+    s07_means = s07_shap[[f"SHAP_{c}" for c in items]].mean().sort_values(ascending=False)
+    school_shap = pd.read_csv(os.path.join(root, "rq4", "tables", "T_rq4_xai_by_school.csv"))
+    s06 = school_shap.loc[school_shap.school_id == "SCH_006",
+                          [f"shap_{c}" for c in items]].iloc[0]
+    s06_rank = int(s06.rank(ascending=False, method="min")[f"shap_A_Q1"])
+
+    print("\n" + "=" * 78 + "\nLOCKED RUN FINDINGS\n" + "=" * 78)
+    print(f"Cronbach's alpha (AQ-10): {alpha:.2f}")
+    print(f"Distinct response patterns shared by both groups: {shared} of {total_patterns}")
+    print(f"Item 1 correlation with every other item is negative: {'yes' if item1_negative else 'no'}")
+    print(f"Maximum absolute item correlation: {max_corr:.2f} ({first_item.replace('A_', '')} and "
+          f"{second_item.replace('A_', '')}; signed r={signed_corr:.2f})")
+    print(f"Mean SHAP for item 1, definitely disagree: {item1_shap.get(0, np.nan):+.3f}")
+    print(f"Mean SHAP for item 1, definitely agree: {item1_shap.get(3, np.nan):+.3f}")
+    print(f"Test-set logistic regression versus AQ-10 total score: DeLong p={logistic_p:.2f}")
+    print(f"S07 false positives: {len(s07)}; also scoring 6 or more: {int((s07.AQ_score_legacy >= 6).sum())}; "
+          f"largest mean SHAP: {s07_means.index[0].replace('SHAP_A_', 'Q')} {s07_means.iloc[0]:+.2f}")
+    print(f"S06 item 1 SHAP rank: {s06_rank} (out of {len(items)})")
+    print("Specificity check: all ten reported pairs involving S06 or S07 were below the AQ-10 rule.")
+
+
 def child_env():
-    # UTF-8 mode: the scripts write symbols such as Δ and ≥, and Windows does not default to UTF-8
     return dict(os.environ, AQ10_BASE=BASE, PYTHONUTF8="1", PYTHONIOENCODING="utf-8", MPLBACKEND="Agg")
 
 
@@ -231,6 +314,8 @@ def run(*steps, max_minutes=None):
             collect()
         else:
             run_step(s, max_minutes)
+            if s == "step7":
+                print_locked_findings()
             _show_new_figures(t0)
 
 
@@ -261,7 +346,12 @@ def main():
             if code != 0:
                 raise StepError("prepare " + (f"STOPPED after {limit} min." if code == TIMED_OUT else f"FAILED (exit code {code})."))
         for s in steps:
-            collect() if s == "collect" else run_step(s, a.max_minutes)
+            if s == "collect":
+                collect()
+            else:
+                run_step(s, a.max_minutes)
+                if s == "step7":
+                    print_locked_findings()
     except StepError as e:
         sys.exit(f"\n{e}")
     print(f"\nDone in {(time.time() - t0) / 60:.1f} min.")

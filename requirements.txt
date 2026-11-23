@@ -9,5 +9,3 @@ shap
 scipy
 joblib
 matplotlib
-# Only pipeline/phase0_qc.py needs openpyxl (it reads the original spreadsheets, which are not shared).
-openpyxl
