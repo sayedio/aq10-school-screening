@@ -70,14 +70,6 @@
     "SQ3",
     "SQ4"
   ],
-  "paths": {
-    "project_dir": "/content/drive/MyDrive/Autism/aq_10",
-    "bd_clean": "/content/drive/MyDrive/Autism/aq_10/data/processed/bd_clean.csv",
-    "train": "/content/drive/MyDrive/Autism/aq_10/data/splits/train.csv",
-    "test": "/content/drive/MyDrive/Autism/aq_10/data/splits/test.csv",
-    "cv_fold_indices": "/content/drive/MyDrive/Autism/aq_10/config/cv_fold_indices.json",
-    "hashes": "/content/drive/MyDrive/Autism/aq_10/data/hashes.json"
-  },
   "consort": {
     "raw_total": 863,
     "excl_no_consent": 0,
