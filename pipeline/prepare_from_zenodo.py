@@ -1,11 +1,10 @@
 """Rebuild the locked Phase-0 outputs from the Zenodo file.
 
-phase0_qc.py starts from the original school spreadsheets, which contain school
+The original cleaner started from school spreadsheets, which contain school
 names and are not shared. Approved users of the BD-AQ10 dataset
 (doi: 10.5281/zenodo.23988059) receive full_dataset.csv instead, with every form
-received (863 children). Like phase0_qc.py, this script keeps the children aged
-4 to 11 (843) and turns them into the exact inputs that rq1_baseline.py to
-rq4_explanation.py read:
+received (863 children). This script keeps the children aged
+4 to 11 (843) and turns them into the exact inputs used by the analysis steps:
 
     <AQ10_BASE>/aq_10/data/processed/bd_clean.csv
     <AQ10_BASE>/aq_10/data/splits/train.csv      (development set, 674 children)
@@ -35,7 +34,7 @@ import sys
 import pandas as pd
 
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))   # repository root
-AGE_RANGE = (4, 11)                  # years, inclusive; the same exclusion as in phase0_qc.py
+AGE_RANGE = (4, 11)
 FORWARD = ["Q1", "Q5", "Q7", "Q10", "SQ1", "SQ2", "SQ3"]
 REVERSE = ["Q2", "Q3", "Q4", "Q6", "Q8", "Q9", "SQ4"]
 AQ_ITEMS = [f"Q{i}" for i in range(1, 11)]
@@ -64,7 +63,6 @@ def build(full_dataset_csv, base):
         sys.exit(f"Unexpected values in the group column: {unknown} (expected ASD or mainstream)")
     asd = group.isin(["asd", "special"])                  # ASD school; the file first uploaded said "special"
 
-    # Leave out children outside the study age range (20 forms, children aged 3 or 12)
     in_range = z.age.between(*AGE_RANGE)
     received = (int(asd.sum()), int((~asd).sum()))        # ASD schools, mainstream schools
     excluded = (int((asd & ~in_range).sum()), int((~asd & ~in_range).sum()))
@@ -166,7 +164,6 @@ def draw_study_design(bd, dev, test, out_path, received, excluded):
         def line(xs, ys, c=INK):
             ax.plot(xs, ys, color=c, lw=0.8, solid_capstyle="butt")
 
-        # row 1
         y1, h1 = 2.93, 0.50; bw = 1.27; gap = (W - 0.10 - 5 * bw) / 4; xs = [0.05 + i * (bw + gap) for i in range(5)]
         r1 = [(f"{words.get(n_sch, n_sch)} schools", ["Bangladesh", f"{n_asd_sch} ASD, {n_sch - n_asd_sch} mainstream"]),
               ("Forms received", [f"n = {sum(received)}", f"{received[0]} / {received[1]}"]),
@@ -190,7 +187,6 @@ def draw_study_design(bd, dev, test, out_path, received, excluded):
         pA = (0.05, 0.98, 3.50, 1.22); pB = (3.61, 0.98, 3.50, 1.22)
         line([pA[0] + pA[2] / 2, pB[0] + pB[2] / 2], [yb, yb])
         arrow(pA[0] + pA[2] / 2, yb, pA[0] + pA[2] / 2, pA[1] + pA[3]); arrow(pB[0] + pB[2] / 2, yb, pB[0] + pB[2] / 2, pB[1] + pB[3])
-        # arm A
         ax.add_patch(FancyBboxPatch(pA[:2], pA[2], pA[3], boxstyle="round,pad=0,rounding_size=0.05", fc=BLUEF, ec="#8fa9c6", lw=0.9))
         ax.text(pA[0] + 0.10, pA[1] + pA[3] - 0.12, "A. Internal test-set validation", fontsize=7.6, fontweight="bold", color=BLUE, va="center")
         bx, by, bwid, bh = pA[0] + 0.12, pA[1] + 0.77, pA[2] - 0.24, 0.17
@@ -210,7 +206,6 @@ def draw_study_design(bd, dev, test, out_path, received, excluded):
             box(x, sy, sw, sh, t, l, ls=6.3, ts=7)
         for i in range(2):
             arrow(ax_[i] + sw, sy + sh / 2, ax_[i + 1], sy + sh / 2)
-        # arm B
         ax.add_patch(FancyBboxPatch(pB[:2], pB[2], pB[3], boxstyle="round,pad=0,rounding_size=0.05", fc=GREENF, ec="#93bba3", lw=0.9))
         ax.text(pB[0] + 0.10, pB[1] + pB[3] - 0.12, "B. Leave-one-school-out validation", fontsize=7.6, fontweight="bold", color=GREEN, va="center")
         ax.text(pB[0] + 0.10, pB[1] + pB[3] - 0.29, "Hyper-parameters locked from arm A", fontsize=6.1, style="italic", color="#555555", va="center")
@@ -230,7 +225,6 @@ def draw_study_design(bd, dev, test, out_path, received, excluded):
             [f"on {n_sch - 1} schools", f"{len(bd) - sizes.max()} to {len(bd) - sizes.min()} children"], ls=6.3, ts=7)
         box(rb_x, pB[1] + 0.05, 1.20, 0.34, "Pooled predictions", [f"out-of-fold, n = {len(bd)}"], ls=6.3, ts=7)
         arrow(rb_x + 0.60, pB[1] + 0.46, rb_x + 0.60, pB[1] + 0.39)
-        # row 3: analyses
         y3, h3 = 0.04, 0.52; aw = (W - 0.10 - 4 * 0.07) / 5; axs = [0.05 + i * (aw + 0.07) for i in range(5)]
         A = [("Model versus AQ-10 rule", ["McNemar, child and school", "DeLong test, bootstrap CIs"]),
              ("Lower cut-offs (post hoc)", ["score ≥ 5, matched specificity", "score ≥ 4 by Youden index"]),
